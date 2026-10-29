@@ -94,6 +94,12 @@ class AdminTests(TestCase):
         response = self.client.get(reverse("admin:budget_month_close_month", args=[month.pk]))
         self.assertEqual(response.status_code, 403)
 
+    def test_overview_shows_newest_month_first(self):
+        make_month(SEP)
+        make_month(datetime.date(2025, 10, 1))
+        content = self.client.get(reverse("admin:budget_month_overview")).content.decode("utf-8")
+        self.assertLess(content.index("10.25"), content.index("09.25"))
+
     def test_export_csv(self):
         month = make_month(SEP)
         SavingsEntry.objects.create(

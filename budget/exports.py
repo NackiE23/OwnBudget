@@ -15,7 +15,8 @@ from budget.models import AllocationCategory, LineType, Month, MonthAllocation, 
 
 def months_queryset(queryset: QuerySet[Month] | None = None) -> QuerySet[Month]:
     queryset = queryset if queryset is not None else Month.objects.all()
-    return queryset.order_by("period").prefetch_related(
+    # Як у таблиці Excel: поточний місяць зверху.
+    return queryset.order_by("-period").prefetch_related(
         Prefetch("allocations", queryset=MonthAllocation.objects.select_related("category")),
         Prefetch("lines", queryset=MonthLine.objects.select_related("line_type")),
         Prefetch("savings_entries", queryset=SavingsEntry.objects.select_related("destination")),
