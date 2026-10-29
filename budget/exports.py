@@ -34,15 +34,21 @@ def format_savings_entry(entry: SavingsEntry) -> str:
     return " ".join(parts)
 
 
+def table_columns(months: list[Month]) -> tuple[list[LineType], list[AllocationCategory]]:
+    """Типи рядків і категорії для стовпців: активні та ті, що вже є в цих місяцях."""
+    used_line_types = {line.line_type_id for month in months for line in month.lines.all()}
+    used_categories = {a.category_id for month in months for a in month.allocations.all()}
+    line_types = [lt for lt in LineType.objects.all() if lt.is_active or lt.pk in used_line_types]
+    categories = [c for c in AllocationCategory.objects.all() if c.is_active or c.pk in used_categories]
+    return line_types, categories
+
+
 class MonthTable:
     """Заголовки й рядки таблиці місяців; значення лишаються Decimal або None."""
 
     def __init__(self, months: Iterable[Month]):
         self.months = list(months)
-        used_line_types = {line.line_type_id for month in self.months for line in month.lines.all()}
-        used_categories = {a.category_id for month in self.months for a in month.allocations.all()}
-        self.line_types = [lt for lt in LineType.objects.all() if lt.is_active or lt.pk in used_line_types]
-        self.categories = [c for c in AllocationCategory.objects.all() if c.is_active or c.pk in used_categories]
+        self.line_types, self.categories = table_columns(self.months)
 
     @property
     def headers(self) -> list[str]:

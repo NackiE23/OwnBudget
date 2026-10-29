@@ -9,12 +9,19 @@
         .overview-scroll { overflow: auto; max-height: calc(100vh - 13rem); }
         .overview-table { border-collapse: separate; border-spacing: 0; min-width: 100%; }
         .overview-table th, .overview-table td { vertical-align: top; }
-        .overview-table thead th { position: sticky; top: 0; z-index: 2; }
+        .overview-table thead { position: sticky; top: 0; z-index: 2; }
         .overview-table .overview-sticky { position: sticky; left: 0; z-index: 1; }
-        .overview-table thead .overview-sticky { z-index: 3; }
         .overview-table .overview-number { text-align: right; white-space: nowrap; }
         .overview-table .overview-text { white-space: pre-line; min-width: 16rem; }
         .overview-table .overview-plain { white-space: nowrap; }
+        .overview-table .overview-group-start { border-left-width: 1px; }
+        .overview-table input.overview-input { min-width: 7.5rem; text-align: right; }
+        .overview-table textarea.overview-input { min-width: 16rem; }
+        /* Позначки «Як Є»: золотий краще за план, зелений у межах, червоний гірше. */
+        .overview-mark-gold { background-color: rgba(234, 179, 8, 0.3); }
+        .overview-mark-green { background-color: rgba(34, 197, 94, 0.25); }
+        .overview-mark-red { background-color: rgba(239, 68, 68, 0.25); }
+        .overview-table td[class*="overview-mark-"] .overview-input { background-color: transparent; }
     </style>
 {% endblock %}
 
@@ -27,31 +34,58 @@
         <a href="{% url 'admin:budget_month_export_all_csv' %}" class="border border-base-200 ml-auto px-3 py-1 rounded-default">Експорт у CSV</a>
     </div>
 
-    {% if table.rows %}
-        <div class="overview-scroll bg-white border border-base-200 rounded-default shadow-xs dark:bg-base-900 dark:border-base-800">
-            <table class="overview-table">
-                <thead class="text-font-important-light dark:text-font-important-dark">
-                    <tr>
-                        {% for header in table.headers %}
-                            <th class="bg-base-50 border-b border-base-200 font-semibold px-3 py-2 text-left whitespace-nowrap dark:bg-base-800 dark:border-base-800 {% if forloop.first %}overview-sticky{% endif %}">{{ header }}</th>
-                        {% endfor %}
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in table.rows %}
+    {% if table.months %}
+        {% with rows=table.rows header_bottom=table.header_bottom %}
+            {% for row in rows %}
+                {% if row.editable and can_change %}
+                    <form id="month-form-{{ row.month.pk }}" method="post" action="{% url 'admin:budget_month_overview_save' row.month.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="year" value="{{ selected_year }}">
+                    </form>
+                {% endif %}
+            {% endfor %}
+
+            <div class="overview-scroll bg-white border border-base-200 rounded-default shadow-xs dark:bg-base-900 dark:border-base-800">
+                <table class="overview-table">
+                    <thead class="text-font-important-light dark:text-font-important-dark">
                         <tr>
-                            {% for cell in row %}
-                                {% if forloop.first %}
-                                    <th scope="row" class="overview-sticky overview-plain bg-white border-b border-r border-base-200 font-semibold px-3 py-2 text-left text-font-important-light dark:bg-base-900 dark:border-base-800 dark:text-font-important-dark">{{ cell.value }}</th>
-                                {% else %}
-                                    <td class="overview-{{ cell.kind }} border-b border-base-200 px-3 py-2 dark:border-base-800">{{ cell.value }}</td>
-                                {% endif %}
+                            <th rowspan="2" class="overview-sticky bg-base-50 border-b border-r border-base-200 font-semibold px-3 py-2 text-left whitespace-nowrap dark:bg-base-800 dark:border-base-700">Month</th>
+                            {% for header in table.header_top %}
+                                <th rowspan="{{ header.rowspan }}" colspan="{{ header.colspan }}" class="bg-base-50 border-b border-base-200 font-semibold px-3 py-2 whitespace-nowrap dark:bg-base-800 dark:border-base-700 {% if header.colspan > 1 %}overview-group-start text-center{% else %}text-left{% endif %}">{{ header.label }}</th>
                             {% endfor %}
                         </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+                        <tr>
+                            {% for label in header_bottom %}
+                                <th class="bg-base-50 border-b border-base-200 font-normal px-3 py-1 text-right whitespace-nowrap dark:bg-base-800 dark:border-base-700 {% cycle 'overview-group-start' '' %}">{{ label }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                                <tr id="month-{{ row.month.pk }}">
+                                    <th scope="row" class="overview-sticky overview-plain bg-white border-b border-r border-base-200 font-semibold px-3 py-2 text-left dark:bg-base-900 dark:border-base-800">
+                                        <a href="{% url 'admin:budget_month_change' row.month.pk %}" class="text-primary-600 underline dark:text-primary-500" title="Повне редагування місяця">{{ row.month }}</a>
+                                        {% if row.editable and can_change %}
+                                            <button type="submit" form="month-form-{{ row.month.pk }}" class="bg-primary-600 block font-medium mt-2 px-3 py-1 rounded-default text-sm text-white">Зберегти</button>
+                                        {% endif %}
+                                    </th>
+                                    {% for cell in row.cells %}
+                                        <td class="overview-{{ cell.kind }} border-b border-base-200 px-3 py-2 dark:border-base-800{% if cell.mark %} overview-mark-{{ cell.mark }}{% endif %}"{% if cell.title %} title="{{ cell.title }}"{% endif %}>
+                                            {% if row.editable and can_change and cell.field %}
+                                                {% if cell.widget == "textarea" %}
+                                                    <textarea name="{{ cell.field }}" form="month-form-{{ row.month.pk }}" rows="3" class="overview-input {{ input_classes }}">{{ cell.value }}</textarea>
+                                                {% else %}
+                                                    <input type="text" inputmode="decimal" name="{{ cell.field }}" value="{{ cell.value }}" form="month-form-{{ row.month.pk }}" class="overview-input {{ input_classes }}">
+                                                {% endif %}
+                                            {% else %}{{ cell.display }}{% endif %}
+                                        </td>
+                                    {% endfor %}
+                                </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% endwith %}
     {% else %}
         <p>Місяців ще немає.</p>
     {% endif %}

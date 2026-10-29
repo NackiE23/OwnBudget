@@ -5,15 +5,18 @@ from django.contrib import admin, messages
 from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Prefetch
 from django.http import HttpRequest, HttpResponseRedirect
+from django.shortcuts import get_object_or_404
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action, display
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
+from unfold.widgets import BASE_INPUT_CLASSES
 
-from budget import exports, services
+from budget import exports, overview, services
 from budget.models import (
     AllocationCategory,
     LineType,
@@ -77,6 +80,9 @@ class SavingsDestinationAdmin(ModelAdmin):
 # --- Місяць -----------------------------------------------------------------
 
 
+MARK_LABELS = {"Золотий": "warning", "Зелений": "success", "Червоний": "danger"}
+
+
 class ClosedMonthInlineMixin:
     """Інлайни закритого місяця лише для читання."""
 
@@ -96,13 +102,17 @@ class ClosedMonthInlineMixin:
 class MonthAllocationInline(ClosedMonthInlineMixin, TabularInline):
     model = MonthAllocation
     extra = 0
-    fields = ["category", "percent", "limit_amount", "actual", "difference_display", "mark", "note"]
-    readonly_fields = ["difference_display"]
+    fields = ["category", "percent", "limit_amount", "actual", "difference_display", "mark_display", "note"]
+    readonly_fields = ["difference_display", "mark_display"]
     tab = True
 
     @display(description="Залишок")
     def difference_display(self, obj: MonthAllocation) -> str:
         return fmt(obj.difference)
+
+    @display(description="Позначка", label=MARK_LABELS)
+    def mark_display(self, obj: MonthAllocation) -> str:
+        return obj.mark_label
 
 
 class MonthLineInline(ClosedMonthInlineMixin, TabularInline):
@@ -134,9 +144,6 @@ class YearListFilter(admin.SimpleListFilter):
 
 
 STATUS_LABELS = {"Відкритий": "info", "Закритий": "success"}
-MARK_LABELS = {"Золотий": "warning", "Зелений": "success", "Червоний": "danger"}
-
-
 @admin.register(Month)
 class MonthAdmin(ModelAdmin):
     inlines = [MonthAllocationInline, MonthLineInline, SavingsEntryInline]
@@ -207,6 +214,9 @@ class MonthAdmin(ModelAdmin):
         if not change:
             services.add_blank_rows(month)
         services.recalculate_with_following(month)
+        self.message_month_checks(request, month)
+
+    def message_month_checks(self, request: HttpRequest, month: Month) -> None:
         if month.percent_warning:
             messages.warning(request, f"{month}: {month.percent_warning} Нерозподілено {fmt(month.unallocated)}.")
         mismatch = month.total_expenses_mismatch
@@ -348,6 +358,11 @@ class MonthAdmin(ModelAdmin):
                 self.admin_site.admin_view(self.overview_view),
                 name="budget_month_overview",
             ),
+            path(
+                "overview/<int:object_id>/save/",
+                self.admin_site.admin_view(self.overview_save_view),
+                name="budget_month_overview_save",
+            ),
         ]
         return urls + super().get_urls()
 
@@ -356,27 +371,41 @@ class MonthAdmin(ModelAdmin):
         year = request.GET.get("year", "")
         if year.isdigit():
             queryset = queryset.filter(period__year=int(year))
-        table = exports.MonthTable(exports.months_queryset(queryset))
-        text_columns = {i for i, header in enumerate(table.headers) if header in ("Savings", "Notes")}
-        rows = [
-            [
-                {
-                    "value": fmt(value) if isinstance(value, Decimal) else (value or ""),
-                    "kind": "number" if isinstance(value, Decimal) else "text" if i in text_columns else "plain",
-                }
-                for i, value in enumerate(row)
-            ]
-            for row in table.rows
-        ]
+        table = overview.Overview(exports.months_queryset(queryset))
         context = {
             **self.admin_site.each_context(request),
             "opts": self.model._meta,
             "title": "Огляд місяців",
             "years": [d.year for d in Month.objects.dates("period", "year", order="DESC")],
             "selected_year": year,
-            "table": {"headers": table.headers, "rows": rows},
+            "table": table,
+            "input_classes": " ".join(BASE_INPUT_CLASSES),
+            "can_change": self.has_change_permission(request),
         }
         return TemplateResponse(request, "admin/budget/month/overview.html", context)
+
+    def overview_save_view(self, request: HttpRequest, object_id: int):
+        month = get_object_or_404(Month, pk=object_id)
+        if request.method != "POST" or not self.has_change_permission(request, month):
+            raise PermissionDenied
+        try:
+            overview.save_month(month, request.POST)
+        except overview.OverviewError as error:
+            for message in error.messages:
+                messages.error(request, f"{month}: {message}")
+        except ValidationError as error:
+            for message in error.messages:
+                messages.error(request, f"{month}: {message}")
+        else:
+            month.refresh_from_db()
+            messages.success(request, f"{month}: збережено.")
+            self.message_month_checks(request, month)
+
+        url = reverse("admin:budget_month_overview")
+        year = request.POST.get("year", "")
+        if year.isdigit():
+            url += f"?year={year}"
+        return HttpResponseRedirect(f"{url}#month-{month.pk}")
 
 
 # --- Записи накопичень ------------------------------------------------------

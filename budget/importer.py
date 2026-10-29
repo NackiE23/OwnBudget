@@ -26,18 +26,12 @@ from budget.models import (
     SavingsDestination,
     SavingsEntry,
 )
+from budget.parsing import ParsedEntry, parse_savings_line, parse_terms
 
 PLACEHOLDERS = {"", "-", "—", "–"}
 PERIOD_RE = re.compile(r"^(\d{2})\.(\d{2})$")
 # Ліміт як частка іншої комірки: =G13*30% або =N14*20%.
 SHARE_FORMULA_RE = re.compile(r"^=\s*\$?[A-Z]+\$?\d+\s*\*\s*(\d+(?:[.,]\d+)?)\s*%$")
-TERM_RE = re.compile(
-    r"^(?P<prefix>[$€])?\s*(?P<number>\d+(?:[.,]\d+)?)\s*(?P<suffix>[$€]|zl|usdt)?(?=\s|$)\s*(?P<text>.*)$",
-    re.IGNORECASE,
-)
-CURRENCY_SYMBOLS = {"$": Currency.USD, "€": Currency.EUR, "zl": Currency.PLN, "usdt": Currency.USDT}
-FILL_MARKS = {"FFFFFF00": Month.Mark.GOLD, "FF6AA84F": Month.Mark.GREEN, "FFE06666": Month.Mark.RED}
-
 COLUMN_MONTH = "Month"
 COLUMN_TOTAL = "Total expenses"
 COLUMN_SALARY = "Salary"
@@ -58,21 +52,6 @@ class WorkbookError(Exception):
 
 class _DryRun(Exception):
     pass
-
-
-@dataclass
-class Term:
-    amount: Decimal
-    currency: str
-    text: str
-
-
-@dataclass
-class ParsedEntry:
-    amount: Decimal | None
-    currency: str
-    destination: str
-    raw_text: str
 
 
 @dataclass
@@ -143,43 +122,6 @@ def parse_period(value) -> datetime.date | None:
     return datetime.date(2000 + year, month, 1)
 
 
-def parse_terms(line: str) -> list[Term] | None:
-    """
-    Розбирає рядок на доданки «сума [валюта] [текст]», розділені «+».
-    Якщо після «+» йде не сума («1100 Петро + Іра»), весь рядок це один доданок.
-    Повертає None, якщо рядок складніший (дужки, «|», мінус, текст на початку).
-    """
-    if "(" in line or "|" in line:
-        return None
-    matches = [TERM_RE.match(part.strip()) for part in line.split("+")]
-    if not all(matches):
-        matches = [TERM_RE.match(line.strip())]
-        if not matches[0]:
-            return None
-    return [_term(match) for match in matches]
-
-
-def _term(match: re.Match) -> Term:
-    symbol = (match["prefix"] or match["suffix"] or "").lower()
-    currency = CURRENCY_SYMBOLS.get(symbol, Currency.UAH)
-    return Term(Decimal(match["number"].replace(",", ".")), currency, match["text"].strip())
-
-
-def parse_savings_line(line: str) -> list[ParsedEntry]:
-    """
-    Рядок Savings → записи. «2000+4000 облігації» дає один запис на суму,
-    «8000 + $200» два записи (валюти різні). Складний рядок стає записом без суми.
-    """
-    terms = parse_terms(line)
-    if terms is None:
-        return [ParsedEntry(None, Currency.UAH, "", line)]
-    same_currency = len({term.currency for term in terms}) == 1
-    if len(terms) > 1 and same_currency and not any(term.text for term in terms[:-1]):
-        total = sum((term.amount for term in terms), Decimal("0"))
-        return [ParsedEntry(total, terms[0].currency, terms[-1].text, line)]
-    return [ParsedEntry(term.amount, term.currency, term.text, line) for term in terms]
-
-
 def text_lines(value) -> list[str]:
     if is_placeholder(value):
         return []
@@ -193,14 +135,6 @@ def expression(formula) -> str:
     if isinstance(formula, str) and formula.startswith("=") and re.search(r"\d\s*[-+*/]\s*\d", formula):
         return formula
     return ""
-
-
-def fill_mark(cell) -> str:
-    fill = cell.fill
-    if not fill or not fill.fill_type:
-        return ""
-    rgb = fill.fgColor.rgb
-    return FILL_MARKS.get(rgb, "") if isinstance(rgb, str) else ""
 
 
 def money_text(value: Decimal) -> str:
@@ -376,7 +310,6 @@ class Importer:
         for name, column in self.sheet.categories:
             category = self.categories[name]
             actual = to_decimal(self.sheet.value(row, column))
-            mark = fill_mark(self.sheet.formulas.cell(row, column))
             percent, limit_amount = self._limit(row, column + 1)
 
             if name == FOOD_CATEGORY and food is not None:
@@ -399,7 +332,6 @@ class Importer:
                 percent=percent,
                 limit_amount=calculations.money(limit_amount) if limit_amount is not None else None,
                 actual=calculations.money(actual) if actual is not None else None,
-                mark=mark,
             )
 
         if food is not None and not food_used:

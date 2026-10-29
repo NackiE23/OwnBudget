@@ -8,18 +8,15 @@ import openpyxl
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import SimpleTestCase, TestCase
-from openpyxl.styles import PatternFill
 
-from budget.importer import Importer, build_sheet, parse_savings_line, parse_terms
+from budget.importer import Importer, build_sheet
 from budget.models import Month, SavingsEntry
+from budget.parsing import parse_savings_line, parse_terms
 
 D = Decimal
 AUG = datetime.date(2025, 8, 1)
 SEP = datetime.date(2025, 9, 1)
 OCT = datetime.date(2025, 10, 1)
-
-GREEN = "FF6AA84F"
-RED = "FFE06666"
 
 HEADERS = {
     "B": "Month",
@@ -58,11 +55,9 @@ class FakeWorkbook:
         for column, name in HEADERS.items():
             self.set(f"{column}4", name)
 
-    def set(self, coordinate: str, value, formula: str | None = None, fill: str | None = None) -> None:
+    def set(self, coordinate: str, value, formula: str | None = None) -> None:
         self.formulas[coordinate] = formula if formula is not None else value
         self.values[coordinate] = value
-        if fill:
-            self.formulas[coordinate].fill = PatternFill("solid", fgColor=fill)
 
     def sheet(self):
         return build_sheet(self.formulas, self.values)
@@ -87,7 +82,7 @@ def sample_workbook() -> FakeWorkbook:
     book.set("J6", "3500 + 100€ подарунок\n1100 Петро + Іра")
     book.set("K6", "-2000 лампа  \n-500 книги")
     book.set("L6", "2000 на USDT")
-    book.set("N6", 12000, fill=GREEN)
+    book.set("N6", 12000)
     book.set("O6", 15000, "=G6*30%")
     book.set("P6", "-")
     book.set("Q6", 10000, "=G6*20%")
@@ -97,7 +92,7 @@ def sample_workbook() -> FakeWorkbook:
     book.set("B7", "09.25")
     book.set("G7", 40000)
     book.set("H7", 9000)
-    book.set("N7", 10000, fill=RED)
+    book.set("N7", 10000)
     book.set("O7", 0.3)
     book.set("P7", 8500)
     book.set("Q7", 0.2)
@@ -204,7 +199,7 @@ class ImportTests(TestCase):
         self.assertEqual(
             allocations(OCT),
             {
-                "Загальні Накопичення": (D("30.00"), D("15000.00"), D("12000.00"), "green"),
+                "Загальні Накопичення": (D("30.00"), D("15000.00"), D("12000.00"), "red"),
                 "Їжа": (D("20.00"), D("10000.00"), None, ""),
                 # 20% від «Як Є» Загальних Накопичень за 09.25.
                 "Знято з накопичень": (D("20.00"), D("2000.00"), None, ""),
@@ -215,7 +210,7 @@ class ImportTests(TestCase):
             allocations(SEP),
             {
                 "Загальні Накопичення": (D("30.00"), D("12000.00"), D("10000.00"), "red"),
-                "Їжа": (D("20.00"), D("8000.00"), D("8500.00"), ""),
+                "Їжа": (D("20.00"), D("8000.00"), D("8500.00"), "green"),
             },
         )
         # Старий місяць: Food стає «Як Є» Їжі.
