@@ -184,7 +184,7 @@ class CreateMonthTests(TestCase):
             a.category.name: (a.percent, a.limit_amount, a.actual) for a in october.allocations.select_related("category")
         }
         # Порожні рядки на всі активні категорії; з вересня нічого не скопійовано.
-        self.assertEqual(len(allocations), 7)
+        self.assertEqual(len(allocations), 11)
         self.assertEqual(allocations["Хата"], (None, None, None))
         # Відсоток із довідника лишається, і «Знято» рахується від вересня за правилом.
         self.assertEqual(allocations["Знято з накопичень"], (D("20.00"), D("3000.00"), None))

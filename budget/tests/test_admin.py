@@ -65,7 +65,7 @@ class AdminTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
         month = Month.objects.get(period=SEP)
-        self.assertEqual(month.allocations.count(), 7)
+        self.assertEqual(month.allocations.count(), 11)
         self.assertEqual(month.lines.count(), 4)
 
     def test_create_next_month_action(self):

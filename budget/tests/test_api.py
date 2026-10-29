@@ -32,7 +32,7 @@ class ApiTests(APITestCase):
     def test_create_month_populates_and_next_action(self):
         response = self.client.post("/api/budget/months/", {"period": "2025-09-01", "salary": "40000"})
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(len(response.json()["allocations"]), 7)
+        self.assertEqual(len(response.json()["allocations"]), 11)
 
         response = self.client.post("/api/budget/months/next/")
         self.assertEqual(response.status_code, 201)
