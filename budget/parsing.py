@@ -1,14 +1,13 @@
 """
-Розбір і запис значень у форматі Excel-таблиці: рядки Savings («$113 моно»)
-і вирази Salary («=54815+33545»). Спільне для імпорту й редагування в огляді.
+Розбір і запис рядків Savings у форматі Excel-таблиці («$113 моно»).
+Спільне для імпорту й редагування в огляді.
 """
 
-import ast
-import operator
 import re
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
+from budget.expressions import plain_number
 from budget.models import Currency, SavingsEntry
 
 TERM_RE = re.compile(
@@ -72,11 +71,6 @@ def parse_savings_line(line: str) -> list[ParsedEntry]:
     return [ParsedEntry(term.amount, term.currency, term.text, line) for term in terms]
 
 
-def plain_number(value: Decimal) -> str:
-    """113.00 → «113», 110.50 → «110.5»."""
-    return format(value.normalize(), "f")
-
-
 def entry_text(entry: SavingsEntry) -> str:
     """Запис накопичень у форматі рядка Savings, який parse_savings_line прочитає назад."""
     if entry.amount is None:
@@ -95,55 +89,3 @@ def entry_text(entry: SavingsEntry) -> str:
     text = f"{PREFIX_SYMBOLS.get(entry.currency, '')}{amount}{SUFFIX_SYMBOLS.get(entry.currency, '')}"
     rest = " ".join(part for part in (entry.destination.name if entry.destination else "", entry.note) if part)
     return f"{text} {rest}".strip()
-
-
-# --- вирази Salary ---------------------------------------------------------
-
-_OPERATORS = {
-    ast.Add: operator.add,
-    ast.Sub: operator.sub,
-    ast.Mult: operator.mul,
-    ast.Div: operator.truediv,
-}
-
-
-class ExpressionError(ValueError):
-    pass
-
-
-def evaluate(expression: str) -> Decimal:
-    """Обчислює арифметичний вираз із чисел і + - * / та дужок. Нічого іншого не виконує."""
-    source = expression.strip().lstrip("=").replace(",", ".").replace(" ", "").replace(" ", "")
-    try:
-        tree = ast.parse(source, mode="eval")
-    except SyntaxError as error:
-        raise ExpressionError(f"Не вираз: «{expression}».") from error
-    return _evaluate(tree.body, expression)
-
-
-def _evaluate(node: ast.AST, expression: str) -> Decimal:
-    if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
-        return Decimal(str(node.value))
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-        return -_evaluate(node.operand, expression)
-    if isinstance(node, ast.BinOp) and type(node.op) in _OPERATORS:
-        left, right = _evaluate(node.left, expression), _evaluate(node.right, expression)
-        try:
-            return _OPERATORS[type(node.op)](left, right)
-        except (ArithmeticError, InvalidOperation) as error:
-            raise ExpressionError(f"Не вдалося обчислити «{expression}».") from error
-    raise ExpressionError(f"У виразі «{expression}» дозволені лише числа, + - * / і дужки.")
-
-
-def parse_amount(text: str) -> tuple[Decimal | None, str]:
-    """
-    Сума з поля вводу: «» → (None, «»), «1 200,50» → (1200.50, «»),
-    «=54815+33545» або «54815+33545» → (88360, «=54815+33545»).
-    """
-    text = text.strip()
-    if not text:
-        return None, ""
-    compact = text.lstrip("=").replace(" ", "").replace(" ", "")
-    if re.fullmatch(r"-?\d+(?:[.,]\d+)?", compact):
-        return Decimal(compact.replace(",", ".")), ""
-    return evaluate(text), "=" + compact.replace(",", ".")

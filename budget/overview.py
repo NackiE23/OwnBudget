@@ -20,7 +20,8 @@ from budget.models import (
     SavingsDestination,
     SavingsEntry,
 )
-from budget.parsing import ExpressionError, entry_text, parse_amount, parse_savings_line, plain_number
+from budget.expressions import ExpressionError, parse_amount, plain_number
+from budget.parsing import entry_text, parse_savings_line
 
 SALARY = "salary"
 TOTAL_EXPENSES = "total_expenses"
@@ -124,10 +125,13 @@ class Overview:
         for line_type in self.line_types:
             own = lines.get(line_type.pk, [])
             total = sum((line.amount for line in own), Decimal("0")) if own else None
-            cell = Cell(display=money_display(total), title="; ".join(line.note for line in own if line.note))
+            cell = Cell(
+                display=money_display(total),
+                title="; ".join(text for line in own for text in (line.amount_expression, line.note) if text),
+            )
             if len(own) <= 1:
                 cell.field = line_field(line_type.pk)
-                cell.value = amount_value(own[0].amount) if own else ""
+                cell.value = (own[0].amount_expression or amount_value(own[0].amount)) if own else ""
             else:
                 cell.title = "Кілька рядків цього типу: редагуй на сторінці місяця."
             row.cells.append(cell)
@@ -149,13 +153,14 @@ class Overview:
             allocation = allocations.get(category.pk)
             actual = allocation.actual if allocation else None
             limit = allocation.limit_amount if allocation else None
+            expression = allocation.actual_expression if allocation else ""
             row.cells.append(
                 Cell(
                     display=money_display(actual),
                     mark=allocation.mark if allocation else "",
                     field=actual_field(category.pk),
-                    value=amount_value(actual),
-                    title=allocation.mark_label if allocation else "",
+                    value=expression or amount_value(actual),
+                    title=" · ".join(text for text in (expression, allocation.mark_label if allocation else "") if text),
                 )
             )
             limit_cell = Cell(display=money_display(limit), value=amount_value(limit))
@@ -213,7 +218,7 @@ def save_month(month: Month, data: Mapping[str, str]) -> None:
     for pk, line_type in line_types.items():
         name = line_field(pk)
         if name in data and len(lines.get(pk, [])) <= 1:
-            line_values[pk] = amount(name, line_type.name)[0]
+            line_values[pk] = amount(name, line_type.name)
 
     allocation_values = {}
     allocations = {a.category_id: a for a in month.allocations.select_related("category")}
@@ -222,7 +227,7 @@ def save_month(month: Month, data: Mapping[str, str]) -> None:
         allocation = allocations.get(category.pk)
         values = {}
         if actual_name in data:
-            values["actual"] = amount(actual_name, f"{category.name}: Як Є")[0]
+            values["actual"], values["actual_expression"] = amount(actual_name, f"{category.name}: Як Є")
         if limit_name in data and (allocation is None or allocation.percent is None):
             values["limit_amount"] = amount(limit_name, f"{category.name}: ліміт")[0]
         if values:
@@ -234,18 +239,19 @@ def save_month(month: Month, data: Mapping[str, str]) -> None:
     month.full_clean(exclude=["period"])
     month.save()
 
-    for pk, value in line_values.items():
+    for pk, (value, expression) in line_values.items():
         own = lines.get(pk, [])
         if own:
             own[0].amount = value or Decimal("0")
-            own[0].save(update_fields=["amount"])
+            own[0].amount_expression = expression
+            own[0].save(update_fields=["amount", "amount_expression"])
         elif value is not None:
-            MonthLine.objects.create(month=month, line_type=line_types[pk], amount=value)
+            MonthLine.objects.create(month=month, line_type=line_types[pk], amount=value, amount_expression=expression)
 
     for category, values in allocation_values.items():
         allocation = allocations.get(category.pk)
         if allocation is None:
-            if all(value is None for value in values.values()):
+            if all(value in (None, "") for value in values.values()):
                 continue
             MonthAllocation.objects.create(month=month, category=category, **values)
             continue

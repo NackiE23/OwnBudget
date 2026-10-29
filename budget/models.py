@@ -4,7 +4,7 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
-from budget import calculations
+from budget import calculations, expressions
 
 MONEY = {"max_digits": 14, "decimal_places": 2}
 PERCENT = {
@@ -12,6 +12,19 @@ PERCENT = {
     "decimal_places": 2,
     "validators": [MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("100"))],
 }
+
+
+def drop_stale_expression(instance, value_field: str, expression_field: str, save_kwargs: dict) -> None:
+    """
+    Прибирає вираз, якщо суму змінили в обхід нього (форма місяця, API):
+    вираз має завжди давати збережену суму.
+    """
+    expression = getattr(instance, expression_field)
+    if expression and not expressions.matches(expression, getattr(instance, value_field)):
+        setattr(instance, expression_field, "")
+        update_fields = save_kwargs.get("update_fields")
+        if update_fields is not None:
+            save_kwargs["update_fields"] = {*update_fields, expression_field}
 
 
 class MonthClosedError(ValidationError):
@@ -68,6 +81,7 @@ class Month(models.Model):
     def save(self, *args, **kwargs):
         if self.period:
             self.period = self.period.replace(day=1)
+        drop_stale_expression(self, "salary", "salary_expression", kwargs)
         super().save(*args, **kwargs)
 
     def clean(self):
@@ -288,6 +302,12 @@ class MonthAllocation(MonthChildMixin):
         help_text="Ціль/Межа. Рахується з відсотка або вводиться вручну.",
     )
     actual = models.DecimalField("як є", **MONEY, null=True, blank=True)
+    actual_expression = models.CharField(
+        "формула «як є»",
+        max_length=255,
+        blank=True,
+        help_text="Вираз, з якого вийшла фактична сума, наприклад =374+7872+2984.",
+    )
     note = models.CharField("примітка", max_length=255, blank=True)
 
     class Meta:
@@ -300,6 +320,10 @@ class MonthAllocation(MonthChildMixin):
 
     def __str__(self) -> str:
         return f"{self.month} · {self.category}"
+
+    def save(self, *args, **kwargs):
+        drop_stale_expression(self, "actual", "actual_expression", kwargs)
+        super().save(*args, **kwargs)
 
     @property
     def mark(self) -> str:
@@ -345,6 +369,9 @@ class MonthLine(MonthChildMixin):
     month = models.ForeignKey(Month, on_delete=models.CASCADE, related_name="lines", verbose_name="місяць")
     line_type = models.ForeignKey(LineType, on_delete=models.PROTECT, related_name="lines", verbose_name="тип")
     amount = models.DecimalField("сума", **MONEY, default=Decimal("0"))
+    amount_expression = models.CharField(
+        "формула суми", max_length=255, blank=True, help_text="Вираз, з якого вийшла сума, наприклад =1259+200."
+    )
     note = models.CharField("примітка", max_length=255, blank=True)
 
     class Meta:
@@ -354,6 +381,10 @@ class MonthLine(MonthChildMixin):
 
     def __str__(self) -> str:
         return f"{self.month} · {self.line_type}: {self.amount}"
+
+    def save(self, *args, **kwargs):
+        drop_stale_expression(self, "amount", "amount_expression", kwargs)
+        super().save(*args, **kwargs)
 
 
 class SavingsDestination(models.Model):

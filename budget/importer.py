@@ -15,7 +15,7 @@ from decimal import Decimal, InvalidOperation
 import openpyxl
 from django.db import transaction
 
-from budget import calculations, services
+from budget import calculations, expressions, services
 from budget.models import (
     AllocationCategory,
     Currency,
@@ -131,10 +131,13 @@ def text_lines(value) -> list[str]:
 
 
 def expression(formula) -> str:
-    """Формула з обчисленням («=1259+200»); посилання чи одне число («=1233») не зберігаються."""
-    if isinstance(formula, str) and formula.startswith("=") and re.search(r"\d\s*[-+*/]\s*\d", formula):
-        return formula
-    return ""
+    """
+    Формула з обчисленням («=1259+200») у вигляді, як її зберігає застосунок.
+    Посилання на комірки («=D17+E17») чи одне число («=1233») не зберігаються.
+    """
+    if not isinstance(formula, str) or not formula.startswith("=") or not expressions.is_expression(formula):
+        return ""
+    return expressions.parse_amount(formula)[1]
 
 
 def money_text(value: Decimal) -> str:
@@ -307,15 +310,17 @@ class Importer:
         food = to_decimal(self.sheet.value(row, self.sheet.columns.get(COLUMN_FOOD)))
         excel_limits = {}
         food_used = False
+        food_expression = expression(self.sheet.formula(row, self.sheet.columns.get(COLUMN_FOOD)))
         for name, column in self.sheet.categories:
             category = self.categories[name]
             actual = to_decimal(self.sheet.value(row, column))
+            actual_expression = expression(self.sheet.formula(row, column))
             percent, limit_amount = self._limit(row, column + 1)
 
             if name == FOOD_CATEGORY and food is not None:
                 food_used = True
                 if actual is None:
-                    actual = food
+                    actual, actual_expression = food, food_expression
                 elif calculations.money(actual) != calculations.money(food):
                     self.report.warn(
                         label,
@@ -332,12 +337,16 @@ class Importer:
                 percent=percent,
                 limit_amount=calculations.money(limit_amount) if limit_amount is not None else None,
                 actual=calculations.money(actual) if actual is not None else None,
+                actual_expression=actual_expression,
             )
 
         if food is not None and not food_used:
             # Старі місяці без блоку категорій: Food стає фактичною сумою «Їжа».
             MonthAllocation.objects.create(
-                month=month, category=self.categories[FOOD_CATEGORY], actual=calculations.money(food)
+                month=month,
+                category=self.categories[FOOD_CATEGORY],
+                actual=calculations.money(food),
+                actual_expression=food_expression,
             )
         return excel_limits
 
@@ -380,7 +389,7 @@ class Importer:
                 month=month,
                 line_type=self.line_types[name],
                 amount=calculations.money(amount),
-                note=expression(self.sheet.formula(row, column))[:255],
+                amount_expression=expression(self.sheet.formula(row, column))[:255],
             )
 
         raw = self.sheet.value(row, columns.get(COLUMN_INCOMES))

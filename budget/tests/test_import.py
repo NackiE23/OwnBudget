@@ -156,15 +156,31 @@ class ImportTests(TestCase):
         self.assertEqual(october.salary_expression, "=1000+49000")
         self.assertEqual(october.total_expenses, D("72000.00"))
         self.assertEqual(october.notes, "-2000 лампа\n-500 книги")
-        lines = {line.line_type.name: (line.amount, line.note) for line in october.lines.select_related("line_type")}
+        lines = {
+            line.line_type.name: (line.amount, line.amount_expression, line.note)
+            for line in october.lines.select_related("line_type")
+        }
         self.assertEqual(
             lines,
             {
-                "Rent": (D("15000.00"), ""),
-                "Utility services": (D("1459.00"), "=1259+200"),
-                "Additional incomes": (D("4600.00"), "3500 + 100€ подарунок; 1100 Петро + Іра"),
+                "Rent": (D("15000.00"), "", ""),
+                "Utility services": (D("1459.00"), "=1259+200", ""),
+                "Additional incomes": (D("4600.00"), "", "3500 + 100€ подарунок; 1100 Петро + Іра"),
             },
         )
+
+    def test_formulas_of_actuals(self):
+        book = sample_workbook()
+        book.set("N6", 12000, "=5000+(100*70)")
+        book.set("H8", 7000, "=4000+3000")
+        book.set("D6", 15000, "=D7+E7")
+        run(book)
+
+        october = Month.objects.get(period=OCT)
+        self.assertEqual(october.savings_pool_allocation().actual_expression, "=5000+(100*70)")
+        self.assertEqual(Month.objects.get(period=AUG).allocations.get().actual_expression, "=4000+3000")
+        # Посилання на комірки не обчислити, тож лишається лише сума.
+        self.assertEqual(october.lines.get(line_type__name="Rent").amount_expression, "")
 
     def test_savings_and_crypto(self):
         run(sample_workbook())

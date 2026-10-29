@@ -8,7 +8,8 @@ from django.urls import reverse
 from budget import calculations, services
 from budget.models import LineType, SavingsDestination, SavingsEntry
 from budget.overview import Overview, OverviewError, actual_field, limit_field, line_field, save_month
-from budget.parsing import ExpressionError, entry_text, parse_amount, parse_savings_line
+from budget.expressions import ExpressionError, parse_amount
+from budget.parsing import entry_text, parse_savings_line
 from budget.tests.factories import add_line, by_name, make_month
 
 D = Decimal
