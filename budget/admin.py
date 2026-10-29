@@ -360,7 +360,17 @@ class MonthAdmin(ModelAdmin):
         if year.isdigit():
             queryset = queryset.filter(period__year=int(year))
         table = exports.MonthTable(exports.months_queryset(queryset))
-        rows = [[fmt(v) if isinstance(v, Decimal) else (v or "") for v in row] for row in table.rows]
+        text_columns = {i for i, header in enumerate(table.headers) if header in ("Savings", "Notes")}
+        rows = [
+            [
+                {
+                    "value": fmt(value) if isinstance(value, Decimal) else (value or ""),
+                    "kind": "number" if isinstance(value, Decimal) else "text" if i in text_columns else "plain",
+                }
+                for i, value in enumerate(row)
+            ]
+            for row in table.rows
+        ]
         context = {
             **self.admin_site.each_context(request),
             "opts": self.model._meta,

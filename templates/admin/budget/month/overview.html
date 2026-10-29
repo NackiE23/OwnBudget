@@ -1,7 +1,22 @@
 {% extends "admin/base_site.html" %}
-{% load unfold %}
 
 {% block breadcrumbs %}{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <style>
+        /* Таблиця ширша за екран: скрол усередині блоку, Month і заголовки закріплені. */
+        .overview-scroll { overflow: auto; max-height: calc(100vh - 13rem); }
+        .overview-table { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+        .overview-table th, .overview-table td { vertical-align: top; }
+        .overview-table thead th { position: sticky; top: 0; z-index: 2; }
+        .overview-table .overview-sticky { position: sticky; left: 0; z-index: 1; }
+        .overview-table thead .overview-sticky { z-index: 3; }
+        .overview-table .overview-number { text-align: right; white-space: nowrap; }
+        .overview-table .overview-text { white-space: pre-line; min-width: 16rem; }
+        .overview-table .overview-plain { white-space: nowrap; }
+    </style>
+{% endblock %}
 
 {% block content %}
     <div class="flex flex-wrap gap-2 items-center mb-4">
@@ -13,8 +28,29 @@
     </div>
 
     {% if table.rows %}
-        <div style="overflow-x: auto;">
-            {% component "unfold/components/table.html" with table=table striped=1 %}{% endcomponent %}
+        <div class="overview-scroll bg-white border border-base-200 rounded-default shadow-xs dark:bg-base-900 dark:border-base-800">
+            <table class="overview-table">
+                <thead class="text-font-important-light dark:text-font-important-dark">
+                    <tr>
+                        {% for header in table.headers %}
+                            <th class="bg-base-50 border-b border-base-200 font-semibold px-3 py-2 text-left whitespace-nowrap dark:bg-base-800 dark:border-base-800 {% if forloop.first %}overview-sticky{% endif %}">{{ header }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in table.rows %}
+                        <tr>
+                            {% for cell in row %}
+                                {% if forloop.first %}
+                                    <th scope="row" class="overview-sticky overview-plain bg-white border-b border-r border-base-200 font-semibold px-3 py-2 text-left text-font-important-light dark:bg-base-900 dark:border-base-800 dark:text-font-important-dark">{{ cell.value }}</th>
+                                {% else %}
+                                    <td class="overview-{{ cell.kind }} border-b border-base-200 px-3 py-2 dark:border-base-800">{{ cell.value }}</td>
+                                {% endif %}
+                            {% endfor %}
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     {% else %}
         <p>Місяців ще немає.</p>
