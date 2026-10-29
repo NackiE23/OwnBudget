@@ -1,0 +1,22 @@
+{% extends "admin/base_site.html" %}
+{% load unfold %}
+
+{% block breadcrumbs %}{% endblock %}
+
+{% block content %}
+    <div class="flex flex-wrap gap-2 items-center mb-4">
+        <a href="?" class="border border-base-200 px-3 py-1 rounded-default {% if not selected_year %}bg-primary-600 text-white{% endif %}">Усі роки</a>
+        {% for year in years %}
+            <a href="?year={{ year }}" class="border border-base-200 px-3 py-1 rounded-default {% if selected_year == year|stringformat:'s' %}bg-primary-600 text-white{% endif %}">{{ year }}</a>
+        {% endfor %}
+        <a href="{% url 'admin:budget_month_export_all_csv' %}" class="border border-base-200 ml-auto px-3 py-1 rounded-default">Експорт у CSV</a>
+    </div>
+
+    {% if table.rows %}
+        <div style="overflow-x: auto;">
+            {% component "unfold/components/table.html" with table=table striped=1 %}{% endcomponent %}
+        </div>
+    {% else %}
+        <p>Місяців ще немає.</p>
+    {% endif %}
+{% endblock %}
