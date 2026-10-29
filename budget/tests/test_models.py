@@ -173,23 +173,23 @@ class CreateMonthTests(TestCase):
         self.assertIn("Знято з накопичень", names)
         self.assertEqual(month.lines.count(), 4)
 
-    def test_next_month_copies_percents_and_line_types(self):
+    def test_next_month_is_blank(self):
         september = make_month(SEP, salary="50000")
         add_line(september, "Rent", "10000")
         october = services.create_next_month()
 
         self.assertEqual(october.period, OCT)
-        self.assertEqual(october.salary, D("50000"))
-        copied = {a.category.name: (a.percent, a.limit_amount) for a in october.allocations.select_related("category")}
-        self.assertEqual(copied["Хата"], (D("25.00"), D("12500.00")))
-        lines = [(line.line_type.name, line.amount) for line in october.lines.select_related("line_type")]
-        self.assertEqual(lines, [("Rent", D("0"))])
-
-    def test_next_month_copies_fixed_amount_limits(self):
-        september = Month.objects.create(period=SEP, salary=D("1000"))
-        MonthAllocation.objects.create(month=september, category=category("savings_pool"), limit_amount=D("300"))
-        october = services.create_next_month()
-        self.assertEqual(october.savings_pool_allocation().limit_amount, D("300.00"))
+        self.assertEqual(october.salary, D("0"))
+        allocations = {
+            a.category.name: (a.percent, a.limit_amount, a.actual) for a in october.allocations.select_related("category")
+        }
+        # Порожні рядки на всі активні категорії; з вересня нічого не скопійовано.
+        self.assertEqual(len(allocations), 7)
+        self.assertEqual(allocations["Хата"], (None, None, None))
+        # Відсоток із довідника лишається, і «Знято» рахується від вересня за правилом.
+        self.assertEqual(allocations["Знято з накопичень"], (D("20.00"), D("3000.00"), None))
+        lines = {line.line_type.name: line.amount for line in october.lines.select_related("line_type")}
+        self.assertEqual(lines, {"Additional incomes": D("0"), "Rent": D("0"), "Utility services": D("0"), "Taxes": D("0")})
 
     def test_next_period_rolls_over_year(self):
         Month.objects.create(period=datetime.date(2025, 12, 1))

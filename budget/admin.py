@@ -199,16 +199,13 @@ class MonthAdmin(ModelAdmin):
     def get_changeform_initial_data(self, request):
         initial = super().get_changeform_initial_data(request)
         initial.setdefault("period", services.next_period())
-        latest = Month.objects.order_by("-period").first()
-        if latest:
-            initial.setdefault("salary", latest.salary)
         return initial
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
         month = form.instance
         if not change:
-            services.populate_from_previous(month)
+            services.add_blank_rows(month)
         services.recalculate_with_following(month)
         if month.percent_warning:
             messages.warning(request, f"{month}: {month.percent_warning} Нерозподілено {fmt(month.unallocated)}.")

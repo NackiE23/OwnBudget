@@ -23,32 +23,18 @@ def next_period() -> datetime.date:
 
 
 @transaction.atomic
-def populate_from_previous(month: Month) -> None:
+def add_blank_rows(month: Month) -> None:
     """
-    Заповнює порожній місяць розподілом і рядками з попереднього місяця
-    (вимога B-1). Якщо попереднього немає, бере активні довідники.
-    Суми рядків не копіюються: тип рядка лишається, суму треба внести.
+    Додає в порожній місяць по рядку на кожну активну категорію й тип рядка,
+    щоб дані було куди вносити протягом місяця. Нічого не копіюється з інших
+    місяців: суми порожні, відсоток лише той, що заданий у довіднику категорії.
     """
-    previous = month.previous()
-
     if not month.allocations.exists():
-        if previous and previous.allocations.exists():
-            templates = [
-                (a.category, a.percent, None if a.percent is not None else a.limit_amount)
-                for a in previous.allocations.select_related("category")
-                if a.category.is_active
-            ]
-        else:
-            templates = [(c, c.default_percent, None) for c in AllocationCategory.objects.filter(is_active=True)]
-        for category, percent, limit_amount in templates:
-            MonthAllocation.objects.create(month=month, category=category, percent=percent, limit_amount=limit_amount)
+        for category in AllocationCategory.objects.filter(is_active=True):
+            MonthAllocation.objects.create(month=month, category=category, percent=category.default_percent)
 
     if not month.lines.exists():
-        if previous and previous.lines.exists():
-            line_types = [line.line_type for line in previous.lines.select_related("line_type") if line.line_type.is_active]
-        else:
-            line_types = list(LineType.objects.filter(is_active=True))
-        for line_type in line_types:
+        for line_type in LineType.objects.filter(is_active=True):
             MonthLine.objects.create(month=month, line_type=line_type)
 
     month.recalculate()
@@ -56,15 +42,12 @@ def populate_from_previous(month: Month) -> None:
 
 @transaction.atomic
 def create_month(period: datetime.date, salary=None) -> Month:
-    """Створює місяць; Salary за замовчуванням береться з попереднього місяця."""
+    """Створює порожній місяць; Salary вноситься вручну."""
     month = Month(period=first_day(period))
-    previous = month.previous()
     if salary is not None:
         month.salary = salary
-    elif previous:
-        month.salary = previous.salary
     month.save()
-    populate_from_previous(month)
+    add_blank_rows(month)
     return month
 
 

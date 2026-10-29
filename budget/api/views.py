@@ -53,7 +53,7 @@ class MonthViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         month = serializer.save()
-        services.populate_from_previous(month)
+        services.add_blank_rows(month)
         services.recalculate_with_following(month)
         response = self._fresh(month)
         response.status_code = status.HTTP_201_CREATED
@@ -77,7 +77,7 @@ class MonthViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["post"])
     def next(self, request):
-        """Створює місяць після останнього з розподілом попереднього (B-1)."""
+        """Створює порожній місяць після останнього."""
         month = services.create_next_month()
         response = self._fresh(month)
         response.status_code = status.HTTP_201_CREATED
