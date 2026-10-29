@@ -57,6 +57,7 @@ class MonthAllocationSerializer(MonthChildSerializer):
             "limit_amount",
             "actual",
             "difference",
+            "mark",
             "note",
         ]
 

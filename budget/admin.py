@@ -96,7 +96,7 @@ class ClosedMonthInlineMixin:
 class MonthAllocationInline(ClosedMonthInlineMixin, TabularInline):
     model = MonthAllocation
     extra = 0
-    fields = ["category", "percent", "limit_amount", "actual", "difference_display", "note"]
+    fields = ["category", "percent", "limit_amount", "actual", "difference_display", "mark", "note"]
     readonly_fields = ["difference_display"]
     tab = True
 

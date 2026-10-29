@@ -288,6 +288,13 @@ class MonthAllocation(MonthChildMixin):
         help_text="Ціль/Межа. Рахується з відсотка або вводиться вручну.",
     )
     actual = models.DecimalField("як є", **MONEY, null=True, blank=True)
+    mark = models.CharField(
+        "позначка",
+        max_length=10,
+        choices=Month.Mark.choices,
+        blank=True,
+        help_text="Як пройшла категорія: колір комірки «Як Є» в Excel.",
+    )
     note = models.CharField("примітка", max_length=255, blank=True)
 
     class Meta:
