@@ -4,6 +4,7 @@ from decimal import Decimal
 from django.contrib.auth.models import User
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from budget import calculations, services
 from budget.models import LineType, SavingsDestination, SavingsEntry
@@ -249,14 +250,14 @@ class OverviewViewTests(TestCase):
         self.open = make_month(OCT)
 
     def test_page_shows_inputs_only_for_open_month(self):
-        response = self.client.get(reverse("admin:budget_month_overview"))
+        response = self.client.get(reverse("admin:budget_month_overview") + "?year=all")
         self.assertContains(response, 'id="month-form-%d"' % self.open.pk)
         self.assertNotContains(response, 'id="month-form-%d"' % self.closed.pk)
         self.assertContains(response, reverse("admin:budget_month_change", args=[self.closed.pk]))
         self.assertContains(response, 'colspan="2"')
 
     def test_empty_cells_of_closed_month_show_dash(self):
-        content = self.client.get(reverse("admin:budget_month_overview")).content.decode()
+        content = self.client.get(reverse("admin:budget_month_overview") + "?year=all").content.decode()
         start = content.index(f'id="month-{self.open.pk}"')
         open_row = content[start : content.index("</tr>", start)]
         start = content.index(f'id="month-{self.closed.pk}"')
@@ -264,6 +265,17 @@ class OverviewViewTests(TestCase):
         # Закритий місяць без рядків витрат, доходів, Savings і Notes: прочерки.
         self.assertGreaterEqual(closed_row.count('class="overview-empty"'), 5)
         self.assertNotIn("overview-empty", open_row)
+
+    def test_current_year_is_selected_by_default(self):
+        this_year = timezone.localdate().year
+        current = make_month(datetime.date(this_year, 1, 1))
+        response = self.client.get(reverse("admin:budget_month_overview"))
+        self.assertEqual(response.context["selected_year"], str(this_year))
+        self.assertEqual([row.month for row in response.context["table"].rows], [current])
+
+        response = self.client.get(reverse("admin:budget_month_overview") + "?year=all")
+        self.assertEqual(response.context["selected_year"], "all")
+        self.assertEqual(len(response.context["table"].months), 3)
 
     def test_save_redirects_back_with_year(self):
         url = reverse("admin:budget_month_overview_save", args=[self.open.pk])

@@ -80,7 +80,7 @@
 
 {% block content %}
     <div class="flex flex-wrap gap-2 items-center mb-4">
-        <a href="?" class="border border-base-200 px-3 py-1 rounded-default {% if not selected_year %}bg-primary-600 text-white{% endif %}">Усі роки</a>
+        <a href="?year=all" class="border border-base-200 px-3 py-1 rounded-default {% if selected_year == 'all' %}bg-primary-600 text-white{% endif %}">Усі роки</a>
         {% for year in years %}
             <a href="?year={{ year }}" class="border border-base-200 px-3 py-1 rounded-default {% if selected_year == year|stringformat:'s' %}bg-primary-600 text-white{% endif %}">{{ year }}</a>
         {% endfor %}

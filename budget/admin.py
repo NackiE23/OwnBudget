@@ -12,6 +12,7 @@ from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
+from django.utils import timezone
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import action, display
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
@@ -28,6 +29,9 @@ from budget.models import (
     SavingsDestination,
     SavingsEntry,
 )
+
+
+OVERVIEW_ALL_YEARS = "all"
 
 
 def fmt(value: Decimal | None) -> str:
@@ -375,15 +379,21 @@ class MonthAdmin(ModelAdmin):
 
     def overview_view(self, request: HttpRequest):
         queryset = Month.objects.all()
-        year = request.GET.get("year", "")
+        # Без параметра показуємо поточний рік; «Усі роки» це ?year=all.
+        year = request.GET.get("year") or str(timezone.localdate().year)
         if year.isdigit():
             queryset = queryset.filter(period__year=int(year))
+        else:
+            year = OVERVIEW_ALL_YEARS
         table = overview.Overview(exports.months_queryset(queryset))
         context = {
             **self.admin_site.each_context(request),
             "opts": self.model._meta,
             "title": "Огляд місяців",
-            "years": [d.year for d in Month.objects.dates("period", "year", order="DESC")],
+            # Поточний рік є серед кнопок, навіть поки в ньому немає жодного місяця.
+            "years": sorted(
+                {d.year for d in Month.objects.dates("period", "year")} | {timezone.localdate().year}, reverse=True
+            ),
             "selected_year": year,
             "table": table,
             "input_classes": " ".join(BASE_INPUT_CLASSES),
@@ -412,7 +422,7 @@ class MonthAdmin(ModelAdmin):
 
         url = reverse("admin:budget_month_overview")
         year = request.POST.get("year", "")
-        if year.isdigit():
+        if year.isdigit() or year == OVERVIEW_ALL_YEARS:
             url += f"?year={year}"
         return HttpResponseRedirect(f"{url}#month-{month.pk}")
 

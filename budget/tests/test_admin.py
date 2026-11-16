@@ -97,7 +97,7 @@ class AdminTests(TestCase):
     def test_overview_shows_newest_month_first(self):
         make_month(SEP)
         make_month(datetime.date(2025, 10, 1))
-        content = self.client.get(reverse("admin:budget_month_overview")).content.decode("utf-8")
+        content = self.client.get(reverse("admin:budget_month_overview") + "?year=all").content.decode("utf-8")
         self.assertLess(content.index("10.25"), content.index("09.25"))
 
     def test_export_csv(self):

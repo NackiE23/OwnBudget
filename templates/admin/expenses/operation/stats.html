@@ -1,0 +1,39 @@
+{% comment %}Над списком операцій OwnExpenses: остання синхронізація й підсумки.{% endcomment %}
+<style>
+    /* Власні правила: зібраний CSS Unfold має не всі класи Tailwind. */
+    .expenses-stats { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem; }
+    .expenses-sync { align-items: center; display: flex; flex-wrap: wrap; gap: 0.25rem 1rem; }
+    .expenses-sync-details { opacity: 0.75; font-size: 0.875rem; }
+    .expenses-cards { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); }
+    .expenses-card dl { display: grid; gap: 0.25rem 1rem; grid-template-columns: auto 1fr; font-size: 0.875rem; }
+    .expenses-card dt { opacity: 0.75; }
+    .expenses-card dd { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+</style>
+<div class="expenses-stats">
+    <div class="expenses-sync bg-white border border-base-200 px-4 py-3 rounded-default shadow-xs dark:bg-base-900 dark:border-base-800">
+        <span class="material-symbols-outlined text-primary-600 dark:text-primary-500">sync</span>
+        {% if last_sync %}
+            <span>
+                <span class="font-semibold text-font-important-light dark:text-font-important-dark">Остання синхронізація:</span>
+                {{ last_sync.received_at|date:"d.m.Y H:i" }} ({{ last_sync.received_at|timesince }} тому)
+            </span>
+            <span class="expenses-sync-details">
+                {{ last_sync.device }}{% if last_sync.app_version %}, версія {{ last_sync.app_version }}{% endif %}.
+                Операції: {{ last_sync.result.operations.created|default:0 }} нових, {{ last_sync.result.operations.updated|default:0 }} змінено, {{ last_sync.result.operations.deleted|default:0 }} видалено.
+            </span>
+        {% elif devices %}
+            <span>Синхронізацій ще не було.</span>
+        {% else %}
+            <span>Синхронізацій ще не було. Спершу додайте пристрій і впишіть його токен у OwnExpenses.</span>
+        {% endif %}
+    </div>
+
+    <div class="expenses-cards">
+        {% if stats.is_filtered %}
+            {% include "admin/expenses/operation/stats_card.html" with title="За фільтром" totals=stats.filtered %}
+        {% else %}
+            {% include "admin/expenses/operation/stats_card.html" with title="Поточний місяць, "|add:stats.month_label totals=stats.month %}
+        {% endif %}
+        {% include "admin/expenses/operation/stats_card.html" with title="За весь час" totals=stats.all balance=True %}
+    </div>
+</div>

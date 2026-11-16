@@ -1,0 +1,10 @@
+{% load expenses_money %}
+<div class="expenses-card bg-white border border-base-200 px-4 py-3 rounded-default shadow-xs dark:bg-base-900 dark:border-base-800">
+    <div class="font-semibold mb-2 text-font-important-light dark:text-font-important-dark">{{ title }}</div>
+    <dl>
+        <dt>Витрати</dt><dd>{{ totals.expenses|money }}</dd>
+        <dt>Надходження</dt><dd>{{ totals.incomes|money }}</dd>
+        <dt>{% if balance %}Баланс{% else %}Різниця{% endif %}</dt><dd class="font-semibold">{{ totals.balance|money }}</dd>
+        <dt>Операцій</dt><dd>{{ totals.count }}</dd>
+    </dl>
+</div>

@@ -125,6 +125,8 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
     "COERCE_DECIMAL_TO_STRING": True,
+    # Синхронізація OwnExpenses: телефон шле кілька відправок поспіль, але не сотні.
+    "DEFAULT_THROTTLE_RATES": {"expenses-sync": "240/hour"},
 }
 
 UNFOLD = {
@@ -153,6 +155,26 @@ UNFOLD = {
                         "title": "Записи накопичень",
                         "icon": "savings",
                         "link": reverse_lazy("admin:budget_savingsentry_changelist"),
+                    },
+                ],
+            },
+            {
+                "title": "OwnExpenses",
+                "items": [
+                    {
+                        "title": "Операції",
+                        "icon": "receipt_long",
+                        "link": reverse_lazy("admin:expenses_operation_changelist"),
+                    },
+                    {
+                        "title": "Журнал синхронізацій",
+                        "icon": "sync",
+                        "link": reverse_lazy("admin:expenses_syncbatch_changelist"),
+                    },
+                    {
+                        "title": "Пристрої",
+                        "icon": "smartphone",
+                        "link": reverse_lazy("admin:expenses_device_changelist"),
                     },
                 ],
             },
