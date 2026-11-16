@@ -2,9 +2,13 @@
 Головна сторінка: місяці в розкладці Excel (B-10). Над кожною категорією
 заголовок, під ним «Як Є» і «Ціль/Межа»; комірка «Як Є» розфарбована за
 позначкою. Відкриті місяці редагуються просто в таблиці, крім відсотків.
+Доходи (Additional incomes), Savings і Notes це списки записів: кожен запис
+додається, редагується й видаляється окремо, у вікні поверх таблиці.
 """
 
+import json
 from collections.abc import Iterable, Mapping
+import dataclasses
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -14,6 +18,8 @@ from budget import calculations, services
 from budget.exports import table_columns
 from budget.models import (
     AllocationCategory,
+    Currency,
+    LineType,
     Month,
     MonthAllocation,
     MonthLine,
@@ -21,7 +27,7 @@ from budget.models import (
     SavingsEntry,
 )
 from budget.expressions import ExpressionError, parse_amount, plain_number
-from budget.parsing import entry_text, parse_savings_line
+from budget.parsing import PREFIX_SYMBOLS, SUFFIX_SYMBOLS
 
 SALARY = "salary"
 TOTAL_EXPENSES = "total_expenses"
@@ -52,8 +58,15 @@ def limit_field(category_id: int) -> str:
     return f"limit-{category_id}"
 
 
-def savings_text(month: Month) -> str:
-    return "\n".join(entry_text(entry) for entry in month.savings_entries.all())
+def note_lines(month: Month) -> list[str]:
+    """Нотатки місяця як записи: кожен непорожній рядок окремо."""
+    return [line.strip() for line in month.notes.splitlines() if line.strip()]
+
+
+def savings_amount_display(entry: SavingsEntry) -> str:
+    if entry.amount is None:
+        return ""
+    return f"{PREFIX_SYMBOLS.get(entry.currency, '')}{money_display(entry.amount)}{SUFFIX_SYMBOLS.get(entry.currency, '')}"
 
 
 @dataclass
@@ -64,14 +77,36 @@ class HeaderCell:
 
 
 @dataclass
+class Entry:
+    """Запис у комірці-списку: дохід, накопичення або нотатка."""
+
+    key: str  # pk запису; для нотаток номер рядка
+    amount: str = ""
+    text: str = ""
+    values: dict[str, str] = field(default_factory=dict)  # початкові значення форми редагування
+
+    @property
+    def summary(self) -> str:
+        return " ".join(part for part in (self.amount, self.text) if part)
+
+    @property
+    def values_json(self) -> str:
+        return json.dumps(self.values, ensure_ascii=False)
+
+
+@dataclass
 class Cell:
     display: str = ""
-    kind: str = "number"  # number, text або plain
+    kind: str = "number"  # number, plain або entries
     mark: str = ""
     field: str = ""  # ім'я поля форми; порожнє означає, що комірка не редагується
     value: str = ""
-    widget: str = "input"  # input або textarea
     title: str = ""
+    entry_type: str = ""  # income, savings або notes для комірок-списків
+    label: str = ""
+    # dataclasses.field: ім'я field у цьому класі зайняте полем форми.
+    entries: list[Entry] = dataclasses.field(default_factory=list)
+    total: str = ""
 
 
 @dataclass
@@ -89,9 +124,9 @@ class Overview:
     @property
     def header_top(self) -> list[HeaderCell]:
         """Верхній рядок заголовків без «Month»: категорії займають два стовпці."""
-        cells = [HeaderCell("Salary", rowspan=2)]
+        cells = [HeaderCell("Total expenses", rowspan=2), HeaderCell("Salary", rowspan=2)]
         cells += [HeaderCell(line_type.name, rowspan=2) for line_type in self.line_types]
-        cells += [HeaderCell("Total expenses", rowspan=2), HeaderCell("Savings", rowspan=2), HeaderCell("Notes", rowspan=2)]
+        cells += [HeaderCell("Savings", rowspan=2), HeaderCell("Notes", rowspan=2)]
         cells += [HeaderCell(category.name, colspan=2) for category in self.categories]
         cells += [HeaderCell("Нерозподілено", rowspan=2), HeaderCell("Статус", rowspan=2)]
         return cells
@@ -112,6 +147,14 @@ class Overview:
         row = Row(month=month, editable=not month.is_closed)
         row.cells.append(
             Cell(
+                display=money_display(month.total_expenses_effective),
+                field=TOTAL_EXPENSES,
+                value=amount_value(month.total_expenses),
+                title="" if month.total_expenses is not None else "Порожньо: показано суму рядків витрат.",
+            )
+        )
+        row.cells.append(
+            Cell(
                 display=money_display(month.salary),
                 field=SALARY,
                 value=month.salary_expression or amount_value(month.salary),
@@ -124,6 +167,9 @@ class Overview:
             lines.setdefault(line.line_type_id, []).append(line)
         for line_type in self.line_types:
             own = lines.get(line_type.pk, [])
+            if line_type.kind == LineType.Kind.INCOME:
+                row.cells.append(income_cell(line_type, own))
+                continue
             total = sum((line.amount for line in own), Decimal("0")) if own else None
             cell = Cell(
                 display=money_display(total),
@@ -136,17 +182,8 @@ class Overview:
                 cell.title = "Кілька рядків цього типу: редагуй на сторінці місяця."
             row.cells.append(cell)
 
-        row.cells.append(
-            Cell(
-                display=money_display(month.total_expenses_effective),
-                field=TOTAL_EXPENSES,
-                value=amount_value(month.total_expenses),
-                title="" if month.total_expenses is not None else "Порожньо: показано суму рядків витрат.",
-            )
-        )
-        text = savings_text(month)
-        row.cells.append(Cell(display=text, kind="text", field=SAVINGS, value=text, widget="textarea"))
-        row.cells.append(Cell(display=month.notes, kind="text", field=NOTES, value=month.notes, widget="textarea"))
+        row.cells.append(savings_cell(month))
+        row.cells.append(notes_cell(month))
 
         allocations = {a.category_id: a for a in month.allocations.all()}
         for category in self.categories:
@@ -173,6 +210,66 @@ class Overview:
         row.cells.append(Cell(display=money_display(month.unallocated)))
         row.cells.append(Cell(display=month.get_status_display(), kind="plain"))
         return row
+
+
+def income_cell(line_type: LineType, lines: list[MonthLine]) -> Cell:
+    entries = [
+        Entry(
+            key=str(line.pk),
+            amount=money_display(line.amount),
+            text=line.note,
+            values={"amount": line.amount_expression or amount_value(line.amount), "note": line.note},
+        )
+        for line in lines
+    ]
+    total = sum((line.amount for line in lines), Decimal("0"))
+    return Cell(
+        kind="entries",
+        field=line_field(line_type.pk),
+        entry_type="income",
+        label=line_type.name,
+        entries=entries,
+        total=money_display(total) if len(lines) > 1 else "",
+    )
+
+
+def savings_cell(month: Month) -> Cell:
+    entries = []
+    for entry in month.savings_entries.all():
+        destination = entry.destination.name if entry.destination else ""
+        text = " · ".join(part for part in (destination, entry.note) if part)
+        if entry.amount is None:
+            # Рядок з Excel, який не вдалося розібрати: показуємо як є.
+            text = entry.raw_text or text
+        entries.append(
+            Entry(
+                key=str(entry.pk),
+                amount=savings_amount_display(entry),
+                text=text,
+                values={
+                    "amount": amount_value(entry.amount),
+                    "currency": entry.currency,
+                    "destination": destination,
+                    "note": entry.note if entry.amount is not None else (entry.raw_text or entry.note),
+                },
+            )
+        )
+    return Cell(kind="entries", field=SAVINGS, entry_type="savings", label="Savings", entries=entries)
+
+
+def notes_cell(month: Month) -> Cell:
+    entries = [Entry(key=str(index), text=line, values={"text": line}) for index, line in enumerate(note_lines(month))]
+    return Cell(kind="entries", field=NOTES, entry_type="notes", label="Notes", entries=entries)
+
+
+def entries_cell(month: Month, kind: str) -> Cell:
+    """Комірка-список одного місяця; month має бути з prefetch, як у months_queryset."""
+    if kind == SAVINGS:
+        return savings_cell(month)
+    if kind == NOTES:
+        return notes_cell(month)
+    line_type = income_type(kind)
+    return income_cell(line_type, [line for line in month.lines.all() if line.line_type_id == line_type.pk])
 
 
 # --- збереження рядка ------------------------------------------------------
@@ -207,8 +304,6 @@ def save_month(month: Month, data: Mapping[str, str]) -> None:
         month.salary_expression = expression
     if TOTAL_EXPENSES in data:
         month.total_expenses, _ = amount(TOTAL_EXPENSES, "Total expenses")
-    if NOTES in data:
-        month.notes = "\n".join(line.rstrip() for line in data[NOTES].strip().splitlines())
 
     line_values = {}
     lines: dict[int, list[MonthLine]] = {}
@@ -217,7 +312,8 @@ def save_month(month: Month, data: Mapping[str, str]) -> None:
     line_types = {lt.pk: lt for lt in table_columns([month])[0]}
     for pk, line_type in line_types.items():
         name = line_field(pk)
-        if name in data and len(lines.get(pk, [])) <= 1:
+        # Доходи редагуються записами (change_entry), а не полем рядка.
+        if name in data and len(lines.get(pk, [])) <= 1 and line_type.kind == LineType.Kind.EXPENSE:
             line_values[pk] = amount(name, line_type.name)
 
     allocation_values = {}
@@ -261,44 +357,132 @@ def save_month(month: Month, data: Mapping[str, str]) -> None:
         if changed:
             allocation.save(update_fields=changed)
 
-    if SAVINGS in data:
-        _save_savings(month, data[SAVINGS])
-
     services.recalculate_with_following(month)
 
 
-def _save_savings(month: Month, text: str) -> None:
-    """Перезаписує записи накопичень, лише якщо текст справді змінився."""
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if lines == savings_text(month).splitlines():
+# --- записи в комірках-списках ----------------------------------------------
+
+ADD, EDIT, DELETE = "add", "edit", "delete"
+NOTE_MAX_LENGTH = 255
+LINE_PREFIX = line_field(0).removesuffix("0")
+
+
+def income_type(kind: str) -> LineType:
+    """Тип доходу за ім'ям поля («line-7»); OverviewError, якщо це не дохід."""
+    pk = kind.removeprefix(LINE_PREFIX)
+    line_type = LineType.objects.filter(pk=pk, kind=LineType.Kind.INCOME).first() if pk.isdigit() else None
+    if line_type is None:
+        raise OverviewError(["Невідомий стовпець."])
+    return line_type
+
+
+@transaction.atomic
+def change_entry(month: Month, kind: str, action: str, data: Mapping[str, str]) -> None:
+    """
+    Додає (add), змінює (edit) чи видаляє (delete) один запис у стовпці
+    доходу, Savings або Notes. data["entry"] вказує запис для edit і delete.
+    """
+    month.ensure_open()
+    if action not in (ADD, EDIT, DELETE):
+        raise OverviewError(["Невідома дія."])
+    if kind == SAVINGS:
+        _change_savings(month, action, data)
+    elif kind == NOTES:
+        _change_note(month, action, data)
+    else:
+        _change_income(month, income_type(kind), action, data)
+
+
+def _stale() -> OverviewError:
+    return OverviewError(["Запис не знайдено: можливо, його вже змінили. Оновіть сторінку."])
+
+
+def _required_amount(text: str) -> tuple[Decimal, str]:
+    try:
+        value, expression = parse_amount(text)
+    except ExpressionError as error:
+        raise OverviewError([f"Сума: {error}"]) from error
+    if value is None:
+        raise OverviewError(["Вкажіть суму."])
+    return calculations.money(value), expression
+
+
+def _note(data: Mapping[str, str]) -> str:
+    note = " ".join(data.get("note", "").split())
+    if len(note) > NOTE_MAX_LENGTH:
+        raise OverviewError([f"Примітка довша за {NOTE_MAX_LENGTH} символів."])
+    return note
+
+
+def _change_income(month: Month, line_type: LineType, action: str, data: Mapping[str, str]) -> None:
+    line = None
+    if action != ADD:
+        key = data.get("entry", "")
+        line = month.lines.filter(line_type=line_type, pk=key).first() if key.isdigit() else None
+        if line is None:
+            raise _stale()
+    if action == DELETE:
+        line.delete()
         return
-    month.savings_entries.all().delete()
-    destinations = list(SavingsDestination.objects.all())
-    for line in lines:
-        for entry in parse_savings_line(line):
-            destination, note = _destination(entry.destination, destinations)
-            SavingsEntry.objects.create(
-                month=month,
-                amount=calculations.money(entry.amount) if entry.amount is not None else None,
-                currency=entry.currency,
-                destination=destination,
-                raw_text=entry.raw_text[:500],
-                note=note[:255],
-            )
+    amount, expression = _required_amount(data.get("amount", ""))
+    note = _note(data)
+    line = line or MonthLine(month=month, line_type=line_type)
+    line.amount, line.amount_expression, line.note = amount, expression, note
+    line.save()
 
 
-def _destination(text: str, destinations: list[SavingsDestination]) -> tuple[SavingsDestination | None, str]:
-    """
-    Призначення за початком тексту («Crypto на USDT» → Crypto, примітка «на USDT»).
-    Невідомий текст стає новим призначенням.
-    """
-    if not text:
-        return None, ""
-    lowered = text.lower()
-    for destination in sorted(destinations, key=lambda d: len(d.name), reverse=True):
-        name = destination.name.lower()
-        if lowered == name or lowered.startswith(name + " "):
-            return destination, text[len(name):].strip()
-    destination = SavingsDestination.objects.create(name=text[:100])
-    destinations.append(destination)
-    return destination, ""
+def _change_savings(month: Month, action: str, data: Mapping[str, str]) -> None:
+    entry = None
+    if action != ADD:
+        key = data.get("entry", "")
+        entry = month.savings_entries.filter(pk=key).first() if key.isdigit() else None
+        if entry is None:
+            raise _stale()
+    if action == DELETE:
+        entry.delete()
+        return
+    amount, _ = _required_amount(data.get("amount", ""))
+    currency = data.get("currency") or Currency.UAH
+    if currency not in Currency.values:
+        raise OverviewError(["Невідома валюта."])
+    note = _note(data)
+    destination = _destination(" ".join(data.get("destination", "").split()))
+    entry = entry or SavingsEntry(month=month)
+    entry.amount, entry.currency, entry.destination, entry.note = amount, currency, destination, note
+    # Запис тепер структурований: рядок з Excel йому більше не відповідає.
+    entry.raw_text = ""
+    entry.save()
+
+
+def _destination(name: str) -> SavingsDestination | None:
+    """Призначення за назвою без урахування регістру; нова назва стає новим призначенням."""
+    if not name:
+        return None
+    if len(name) > 100:
+        raise OverviewError(["Призначення довше за 100 символів."])
+    # Порівняння в Python: iexact у SQLite не знає регістру кирилиці.
+    existing = next((d for d in SavingsDestination.objects.all() if d.name.casefold() == name.casefold()), None)
+    return existing or SavingsDestination.objects.create(name=name)
+
+
+def _change_note(month: Month, action: str, data: Mapping[str, str]) -> None:
+    lines = note_lines(month)
+    index = -1
+    if action != ADD:
+        key = data.get("entry", "")
+        index = int(key) if key.isdigit() else -1
+        # Нотатки адресуються номером рядка, тож перевіряємо, що рядок той самий.
+        if not 0 <= index < len(lines) or lines[index] != data.get("original", "").strip():
+            raise _stale()
+    if action == DELETE:
+        del lines[index]
+    else:
+        text = " ".join(data.get("text", "").split())
+        if not text:
+            raise OverviewError(["Нотатка порожня."])
+        if action == ADD:
+            lines.append(text)
+        else:
+            lines[index] = text
+    month.notes = "\n".join(lines)
+    month.save(update_fields=["notes", "updated_at"])

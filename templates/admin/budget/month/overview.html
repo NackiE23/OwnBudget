@@ -7,26 +7,72 @@
     <style>
         /* Таблиця ширша за екран: скрол усередині блоку, Month і заголовки закріплені. */
         .overview-scroll { overflow: auto; max-height: calc(100vh - 13rem); }
-        .overview-table { border-collapse: separate; border-spacing: 0; min-width: 100%; }
+        .overview-table { border-collapse: separate; border-spacing: 0; min-width: 100%; --overview-hover: rgba(15, 23, 42, 0.05); }
+        .dark .overview-table { --overview-hover: rgba(255, 255, 255, 0.06); }
         .overview-table th, .overview-table td { vertical-align: top; }
         .overview-table thead { position: sticky; top: 0; z-index: 2; }
         .overview-table .overview-sticky { position: sticky; left: 0; z-index: 1; }
         .overview-table .overview-number { text-align: right; white-space: nowrap; }
-        .overview-table .overview-text { min-width: 16rem; }
-        .overview-table .overview-pre { white-space: pre-line; }
         .overview-table .overview-plain { white-space: nowrap; }
         .overview-table .overview-group-start { border-left-width: 1px; }
         .overview-table .overview-editing td { padding: 0.375rem; }
         .overview-table input.overview-input { min-width: 7.5rem; text-align: right; }
-        .overview-table textarea.overview-input { display: block; min-width: 16rem; min-height: 4.5rem; resize: vertical; }
-        .overview-table .overview-result { font-size: 0.75rem; line-height: 1rem; margin-top: 0.25rem; opacity: 0.75; text-align: right; }
-        .overview-table .overview-result:empty { display: none; }
-        .overview-table .overview-result.is-error { color: rgb(220, 38, 38); opacity: 1; }
+
+        /* Рядок і стовпець під курсором трохи темніші, на перетині ще темніше. */
+        .overview-table tbody tr.is-hover-row > *,
+        .overview-table tbody .is-hover-col { background-image: linear-gradient(var(--overview-hover), var(--overview-hover)); }
+        .overview-table tbody tr.is-hover-row > .is-hover-col {
+            background-image: linear-gradient(var(--overview-hover), var(--overview-hover)), linear-gradient(var(--overview-hover), var(--overview-hover));
+        }
+        .overview-table tbody tr.is-hover-row .overview-input,
+        .overview-table tbody .is-hover-col .overview-input { background-color: transparent; }
+
+        .overview-result { font-size: 0.75rem; line-height: 1rem; margin-top: 0.25rem; opacity: 0.75; text-align: right; }
+        .overview-result:empty { display: none; }
+        .overview-result.is-error { color: rgb(220, 38, 38); opacity: 1; }
+
         /* Позначки «Як Є»: золотий краще за план, зелений у межах, червоний гірше. */
         .overview-mark-gold { background-color: rgba(234, 179, 8, 0.3); }
         .overview-mark-green { background-color: rgba(34, 197, 94, 0.25); }
         .overview-mark-red { background-color: rgba(239, 68, 68, 0.25); }
         .overview-table td[class*="overview-mark-"] .overview-input { background-color: transparent; }
+
+        /* Комірки-списки: доходи, Savings, Notes. */
+        .overview-table .overview-entries-cell { min-width: 15rem; }
+        .overview-table .overview-entries-cell[data-entry-type="notes"] { min-width: 20rem; }
+        .overview-entries { display: flex; flex-direction: column; gap: 0.125rem; }
+        .overview-entry { align-items: baseline; border-radius: 0.25rem; display: flex; gap: 0.5rem; padding: 0.125rem 0.25rem; }
+        .overview-entry:hover { background-color: var(--overview-hover); }
+        .overview-entry-amount { font-variant-numeric: tabular-nums; font-weight: 500; white-space: nowrap; }
+        .overview-entry-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+        .overview-entry-actions { display: flex; flex-shrink: 0; gap: 0.125rem; opacity: 0.35; transition: opacity 0.15s; }
+        .overview-entry:hover .overview-entry-actions, .overview-entry:focus-within .overview-entry-actions { opacity: 1; }
+        .overview-icon-button { align-items: center; border-radius: 0.25rem; display: inline-flex; padding: 0.125rem; }
+        .overview-icon-button:hover { background-color: var(--overview-hover); }
+        .overview-icon-button[data-entry-action="delete"]:hover { color: rgb(220, 38, 38); }
+        .overview-icon-button .material-symbols-outlined { font-size: 1.125rem; }
+        .overview-entries-total { border-top-width: 1px; font-variant-numeric: tabular-nums; font-weight: 600; margin-top: 0.25rem; padding: 0.25rem 0.25rem 0; }
+        .overview-entry-add { align-items: center; border-radius: 0.25rem; display: inline-flex; font-size: 0.875rem; gap: 0.25rem; margin-top: 0.25rem; opacity: 0.7; padding: 0.125rem 0.375rem 0.125rem 0.125rem; white-space: nowrap; }
+        .overview-entry-add:hover { background-color: var(--overview-hover); opacity: 1; }
+        .overview-entry-add .material-symbols-outlined { font-size: 1.125rem; }
+
+        /* Вікно запису. */
+        .overview-dialog { border-radius: 0.5rem; max-width: calc(100vw - 2rem); padding: 1.25rem; width: 28rem; }
+        .overview-dialog::backdrop { background-color: rgba(0, 0, 0, 0.45); }
+        .overview-dialog label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.25rem; }
+        .overview-dialog .overview-field { margin-bottom: 0.75rem; }
+        .overview-dialog .overview-field-row { display: flex; gap: 0.75rem; }
+        .overview-dialog .overview-field-row > .overview-field { flex: 1; min-width: 0; }
+        .overview-dialog .overview-field-row > .overview-field-narrow { flex: 0 0 7rem; }
+        .overview-dialog input, .overview-dialog select, .overview-dialog textarea { width: 100%; }
+        .overview-dialog [hidden] { display: none !important; }
+        .overview-dialog .overview-compare { display: grid; gap: 0.25rem 0.75rem; grid-template-columns: auto 1fr; margin-top: 0.75rem; }
+        .overview-dialog .overview-compare dt { opacity: 0.7; }
+        .overview-dialog .overview-compare dd { overflow-wrap: anywhere; }
+        .overview-dialog .overview-errors { color: rgb(220, 38, 38); font-size: 0.875rem; margin-bottom: 0.75rem; }
+        .overview-dialog .overview-errors:empty { display: none; }
+        .overview-dialog .overview-buttons { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; }
+        .overview-dialog .overview-danger { background-color: rgb(220, 38, 38); }
     </style>
 {% endblock %}
 
@@ -75,7 +121,11 @@
                                     {% endif %}
                                 </th>
                                 {% for cell in row.cells %}
-                                    <td class="overview-{{ cell.kind }} border-b border-base-200 px-3 py-2 dark:border-base-800{% if cell.mark %} overview-mark-{{ cell.mark }}{% endif %}"{% if cell.title %} title="{{ cell.title }}"{% endif %}>{% if row.editable and can_change and cell.field %}{% if cell.widget == "textarea" %}<textarea name="{{ cell.field }}" form="month-form-{{ row.month.pk }}" rows="3" class="overview-input {{ input_classes }}">{{ cell.value }}</textarea>{% else %}<input type="text" inputmode="decimal" name="{{ cell.field }}" value="{{ cell.value }}" form="month-form-{{ row.month.pk }}" class="overview-input {{ input_classes }}" data-formula><div class="overview-result"></div>{% endif %}{% elif cell.kind == "text" %}<div class="overview-pre">{{ cell.display }}</div>{% else %}{{ cell.display }}{% endif %}</td>
+                                    {% if cell.kind == "entries" %}
+                                        <td class="overview-entries-cell border-b border-base-200 px-3 py-2 dark:border-base-800" data-entry-type="{{ cell.entry_type }}" data-label="{{ cell.label }} · {{ row.month }}"{% if row.editable and can_change %} data-url="{% url 'admin:budget_month_overview_entry' row.month.pk cell.field %}"{% endif %}>{% if row.editable and can_change %}{% include "admin/budget/month/overview_entries.html" with editable=True %}{% else %}{% include "admin/budget/month/overview_entries.html" with editable=False %}{% endif %}</td>
+                                    {% else %}
+                                        <td class="overview-{{ cell.kind }} border-b border-base-200 px-3 py-2 dark:border-base-800{% if cell.mark %} overview-mark-{{ cell.mark }}{% endif %}"{% if cell.title %} title="{{ cell.title }}"{% endif %}>{% if row.editable and can_change and cell.field %}<input type="text" inputmode="decimal" name="{{ cell.field }}" value="{{ cell.value }}" form="month-form-{{ row.month.pk }}" class="overview-input {{ input_classes }}" data-formula><div class="overview-result"></div>{% else %}{{ cell.display }}{% endif %}</td>
+                                    {% endif %}
                                 {% endfor %}
                             </tr>
                         {% endfor %}
@@ -84,11 +134,67 @@
             </div>
         {% endwith %}
 
+        {% if can_change %}
+            <dialog id="entry-dialog" class="overview-dialog bg-white border border-base-200 text-font-default-light dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
+                <form id="entry-form" novalidate>
+                    {% csrf_token %}
+                    <h2 class="font-semibold mb-4 text-base text-font-important-light dark:text-font-important-dark" data-dialog-title></h2>
+
+                    <div data-step="form">
+                        <div class="overview-field-row">
+                            <div class="overview-field" data-for="income savings">
+                                <label for="entry-amount">Сума</label>
+                                <input id="entry-amount" type="text" name="amount" inputmode="decimal" autocomplete="off" required class="{{ input_classes }}" data-formula placeholder="наприклад 3500 або 1048+5408">
+                                <div class="overview-result"></div>
+                            </div>
+                            <div class="overview-field overview-field-narrow" data-for="savings">
+                                <label for="entry-currency">Валюта</label>
+                                <select id="entry-currency" name="currency" class="{{ input_classes }}">
+                                    {% for currency in currencies %}<option value="{{ currency }}">{{ currency }}</option>{% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="overview-field" data-for="savings">
+                            <label for="entry-destination">Призначення</label>
+                            <input id="entry-destination" type="text" name="destination" maxlength="100" autocomplete="off" list="entry-destinations" class="{{ input_classes }}" placeholder="моно, облігації, готівка…">
+                            <datalist id="entry-destinations">
+                                {% for name in destinations %}<option value="{{ name }}">{% endfor %}
+                            </datalist>
+                        </div>
+                        <div class="overview-field" data-for="income savings">
+                            <label for="entry-note">Примітка</label>
+                            <input id="entry-note" type="text" name="note" maxlength="255" autocomplete="off" class="{{ input_classes }}">
+                        </div>
+                        <div class="overview-field" data-for="notes">
+                            <label for="entry-text">Нотатка</label>
+                            <textarea id="entry-text" name="text" rows="3" required class="{{ input_classes }}" placeholder="наприклад -2000 лампа"></textarea>
+                        </div>
+                    </div>
+
+                    <div data-step="confirm" hidden>
+                        <p data-confirm-question></p>
+                        <dl class="overview-compare">
+                            <dt data-compare-before-label>Було</dt><dd data-compare-before></dd>
+                            <dt data-compare-after-label>Стане</dt><dd data-compare-after></dd>
+                        </dl>
+                    </div>
+
+                    <div class="overview-errors" role="alert" data-errors></div>
+
+                    <div class="overview-buttons">
+                        <button type="button" class="border border-base-200 px-3 py-1.5 rounded-default dark:border-base-700" data-dialog-cancel>Скасувати</button>
+                        <button type="button" class="border border-base-200 px-3 py-1.5 rounded-default dark:border-base-700" data-dialog-back hidden>Назад</button>
+                        <button type="submit" class="bg-primary-600 font-medium px-3 py-1.5 rounded-default text-white" data-dialog-submit></button>
+                    </div>
+                </form>
+            </dialog>
+        {% endif %}
+
         <script>
             (function () {
                 // Той самий набір, що й на сервері: числа, + - * /, дужки. Без eval.
                 function evaluate(text) {
-                    const source = text.trim().replace(/^=/, "").replace(/[\s ]/g, "").replace(/,/g, ".");
+                    const source = text.trim().replace(/^=/, "").replace(/[\s ]/g, "").replace(/,/g, ".");
                     let position = 0;
                     function number() {
                         const match = /^\d+(\.\d+)?/.exec(source.slice(position));
@@ -132,7 +238,7 @@
 
                 function money(value) {
                     const [whole, cents] = value.toFixed(2).split(".");
-                    return whole.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + "." + cents;
+                    return whole.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + "." + cents;
                 }
 
                 function showResult(input) {
@@ -152,39 +258,209 @@
                     }
                 }
 
-                // Усі textarea рядка однієї висоти: за найдовшим вмістом.
-                function fitRow(row) {
-                    const areas = [...row.querySelectorAll("textarea")];
-                    if (!areas.length || !row.offsetParent) return;  // ще не намальовано
-                    const previous = areas.map((area) => area.style.height);
-                    areas.forEach((area) => { area.style.height = "auto"; });
-                    const height = Math.max(...areas.map((area) => area.scrollHeight + 2)) + "px";
-                    areas.forEach((area, index) => { area.style.height = previous[index] === height ? previous[index] : height; });
+                document.querySelectorAll("input[data-formula]").forEach((input) => {
+                    showResult(input);
+                    input.addEventListener("input", () => showResult(input));
+                });
+
+                // Підсвітка рядка й стовпця під курсором: межі комірок у таблиці ледь видно.
+                const table = document.querySelector(".overview-table");
+                if (table) {
+                    const body = table.tBodies[0];
+                    let hovered = null;
+                    function clearHover() {
+                        if (!hovered) return;
+                        hovered.parentElement.classList.remove("is-hover-row");
+                        body.querySelectorAll(".is-hover-col").forEach((cell) => cell.classList.remove("is-hover-col"));
+                        hovered = null;
+                    }
+                    body.addEventListener("mouseover", (event) => {
+                        const cell = event.target.closest("td, th");
+                        if (!cell || cell === hovered || !body.contains(cell)) return;
+                        clearHover();
+                        hovered = cell;
+                        cell.parentElement.classList.add("is-hover-row");
+                        if (cell.tagName === "TD") {
+                            for (const row of body.rows) row.cells[cell.cellIndex]?.classList.add("is-hover-col");
+                        }
+                    });
+                    body.addEventListener("mouseleave", clearHover);
                 }
 
-                const rows = [...document.querySelectorAll(".overview-editing")];
-                rows.forEach((row) => {
-                    row.querySelectorAll("input[data-formula]").forEach((input) => {
-                        showResult(input);
-                        input.addEventListener("input", () => showResult(input));
-                    });
-                    row.addEventListener("input", (event) => {
-                        if (event.target.tagName === "TEXTAREA") fitRow(row);
-                    });
-                });
-                // Висоту можна виміряти лише коли таблицю видно й шрифти завантажено:
-                // перераховуємо, щойно блок таблиці з'являється або змінює розмір.
-                const box = document.querySelector(".overview-scroll");
-                if (box && rows.length) {
-                    let width = 0;
-                    new ResizeObserver(() => {
-                        if (box.clientWidth === width) return;
-                        width = box.clientWidth;
-                        rows.forEach(fitRow);
-                    }).observe(box);
-                    window.addEventListener("load", () => rows.forEach(fitRow));
-                    document.fonts.ready.then(() => rows.forEach(fitRow));
+                // --- записи доходів, Savings і Notes ---------------------------
+                const dialog = document.getElementById("entry-dialog");
+                if (!dialog) return;
+                const form = document.getElementById("entry-form");
+                const title = dialog.querySelector("[data-dialog-title]");
+                const formStep = dialog.querySelector('[data-step="form"]');
+                const confirmStep = dialog.querySelector('[data-step="confirm"]');
+                const errors = dialog.querySelector("[data-errors]");
+                const submit = dialog.querySelector("[data-dialog-submit]");
+                const back = dialog.querySelector("[data-dialog-back]");
+                const destinations = document.getElementById("entry-destinations");
+                const fields = {
+                    amount: form.elements.amount,
+                    currency: form.elements.currency,
+                    destination: form.elements.destination,
+                    note: form.elements.note,
+                    text: form.elements.text,
+                };
+                let state = null;
+
+                const titles = { add: "новий запис", edit: "редагування запису", delete: "видалення запису" };
+
+                function showStep(step) {
+                    const confirming = step === "confirm";
+                    formStep.hidden = confirming;
+                    confirmStep.hidden = !confirming;
+                    back.hidden = !(confirming && state.action === "edit");
+                    submit.classList.toggle("overview-danger", state.action === "delete");
+                    submit.classList.toggle("bg-primary-600", state.action !== "delete");
+                    if (state.action === "add") submit.textContent = "Додати";
+                    else if (state.action === "delete") submit.textContent = "Видалити";
+                    else submit.textContent = confirming ? "Так, зберегти" : "Далі";
+                    state.step = step;
                 }
+
+                // Як запис виглядатиме після збереження: для підтвердження редагування.
+                function preview() {
+                    const symbols = { USD: ["$", ""], EUR: ["€", ""], PLN: ["", "zl"], USDT: ["", " USDT"], UAH: ["", ""] };
+                    if (state.type === "notes") return fields.text.value.split(/\s+/).join(" ").trim();
+                    let amount = fields.amount.value.trim();
+                    try { amount = money(evaluate(amount)); } catch (error) { /* лишаємо як введено */ }
+                    if (state.type === "savings") {
+                        const [prefix, suffix] = symbols[fields.currency.value] || ["", ""];
+                        amount = prefix + amount + suffix;
+                        const text = [fields.destination.value.trim(), fields.note.value.trim()].filter(Boolean).join(" · ");
+                        return [amount, text].filter(Boolean).join(" ");
+                    }
+                    return [amount, fields.note.value.trim()].filter(Boolean).join(" ");
+                }
+
+                function open(action, cell, button) {
+                    const values = button && button.dataset.values ? JSON.parse(button.dataset.values) : {};
+                    state = {
+                        action,
+                        cell,
+                        type: cell.dataset.entryType,
+                        entry: button ? button.dataset.entry : "",
+                        summary: button ? button.dataset.summary : "",
+                        original: values.text || "",
+                    };
+                    title.textContent = cell.dataset.label + ": " + titles[action];
+                    errors.textContent = "";
+                    form.reset();
+                    dialog.querySelectorAll("[data-for]").forEach((group) => {
+                        const visible = group.dataset.for.split(" ").includes(state.type);
+                        group.hidden = !visible;
+                        group.querySelectorAll("input, select, textarea").forEach((field) => { field.disabled = !visible; });
+                    });
+                    Object.entries(fields).forEach(([name, field]) => {
+                        if (name in values) field.value = values[name];
+                    });
+                    if (!fields.currency.value) fields.currency.value = "UAH";
+                    showResult(fields.amount);
+
+                    if (action === "delete") {
+                        dialog.querySelector("[data-confirm-question]").textContent = "Видалити цей запис? Його не можна буде відновити.";
+                        dialog.querySelector("[data-compare-before-label]").textContent = "Запис";
+                        dialog.querySelector("[data-compare-before]").textContent = state.summary;
+                        dialog.querySelector("[data-compare-after-label]").hidden = true;
+                        dialog.querySelector("[data-compare-after]").hidden = true;
+                        showStep("confirm");
+                    } else {
+                        showStep("form");
+                    }
+                    dialog.showModal();
+                    if (action !== "delete") {
+                        const first = [...formStep.querySelectorAll("input, textarea")].find((field) => !field.disabled);
+                        first?.focus();
+                    } else {
+                        submit.focus();
+                    }
+                }
+
+                function validate() {
+                    const required = [...formStep.querySelectorAll("[required]")].find((field) => !field.disabled && !field.value.trim());
+                    if (required) {
+                        errors.textContent = state.type === "notes" ? "Нотатка порожня." : "Вкажіть суму.";
+                        required.focus();
+                        return false;
+                    }
+                    if (fields.amount.nextElementSibling.classList.contains("is-error") && !fields.amount.disabled) {
+                        errors.textContent = "Сума: помилка у формулі.";
+                        fields.amount.focus();
+                        return false;
+                    }
+                    return true;
+                }
+
+                async function send() {
+                    const data = new FormData(form);
+                    data.set("action", state.action);
+                    data.set("entry", state.entry);
+                    data.set("original", state.original);
+                    submit.disabled = true;
+                    try {
+                        const response = await fetch(state.cell.dataset.url, {
+                            method: "POST",
+                            body: data,
+                            headers: { "X-Requested-With": "XMLHttpRequest" },
+                            credentials: "same-origin",
+                        });
+                        const payload = await response.json().catch(() => ({ errors: ["Сервер відповів з помилкою (" + response.status + ")."] }));
+                        if (!response.ok) {
+                            errors.textContent = (payload.errors || ["Не вдалося зберегти."]).join(" ");
+                            if (state.action === "edit") showStep("form");
+                            return;
+                        }
+                        state.cell.innerHTML = payload.html;
+                        const destination = fields.destination.value.trim();
+                        if (state.type === "savings" && destination && ![...destinations.options].some((option) => option.value.toLowerCase() === destination.toLowerCase())) {
+                            destinations.append(new Option(destination, destination));
+                        }
+                        dialog.close();
+                    } catch (error) {
+                        errors.textContent = "Немає зв'язку із сервером. Спробуйте ще раз.";
+                    } finally {
+                        submit.disabled = false;
+                    }
+                }
+
+                form.addEventListener("submit", (event) => {
+                    event.preventDefault();
+                    errors.textContent = "";
+                    if (state.action === "edit" && state.step === "form") {
+                        if (!validate()) return;
+                        dialog.querySelector("[data-confirm-question]").textContent = "Зберегти зміни в записі?";
+                        dialog.querySelector("[data-compare-before-label]").textContent = "Було";
+                        dialog.querySelector("[data-compare-before]").textContent = state.summary;
+                        dialog.querySelector("[data-compare-after-label]").hidden = false;
+                        dialog.querySelector("[data-compare-after]").hidden = false;
+                        dialog.querySelector("[data-compare-after]").textContent = preview();
+                        showStep("confirm");
+                        submit.focus();
+                        return;
+                    }
+                    if (state.action !== "delete" && !validate()) return;
+                    send();
+                });
+                // Нотатка однорядкова (кожен рядок Notes окремий запис), тож Enter зберігає.
+                fields.text.addEventListener("keydown", (event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        form.requestSubmit();
+                    }
+                });
+                back.addEventListener("click", () => { errors.textContent = ""; showStep("form"); });
+                dialog.querySelector("[data-dialog-cancel]").addEventListener("click", () => dialog.close());
+
+                table.addEventListener("click", (event) => {
+                    const button = event.target.closest("[data-entry-action]");
+                    const cell = button && button.closest("td[data-url]");
+                    if (!cell) return;
+                    open(button.dataset.entryAction, cell, button.dataset.entryAction === "add" ? null : button);
+                });
             })();
         </script>
     {% else %}

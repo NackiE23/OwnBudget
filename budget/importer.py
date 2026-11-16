@@ -18,7 +18,6 @@ from django.db import transaction
 from budget import calculations, expressions, services
 from budget.models import (
     AllocationCategory,
-    Currency,
     LineType,
     Month,
     MonthAllocation,
@@ -26,7 +25,7 @@ from budget.models import (
     SavingsDestination,
     SavingsEntry,
 )
-from budget.parsing import ParsedEntry, parse_savings_line, parse_terms
+from budget.parsing import ParsedEntry, parse_income_line, parse_savings_line
 
 PLACEHOLDERS = {"", "-", "—", "–"}
 PERIOD_RE = re.compile(r"^(\d{2})\.(\d{2})$")
@@ -393,29 +392,24 @@ class Importer:
             )
 
         raw = self.sheet.value(row, columns.get(COLUMN_INCOMES))
-        lines = text_lines(raw)
-        if not lines:
-            return
-        total = Decimal("0")
-        for line in lines:
-            terms = parse_terms(line)
-            if terms is None:
-                self.report.warn(label, f"Additional incomes: рядок «{line}» не розібрано, у суму не входить.")
-                continue
-            for term in terms:
-                if term.currency == Currency.UAH:
-                    total += term.amount
-                else:
-                    self.report.warn(
-                        label,
-                        f"Additional incomes: {term.amount} {term.currency} з «{line}» не входить у суму (лише гривні).",
-                    )
-        note = "; ".join(lines)
-        if len(note) > 255:
-            self.report.warn(label, "Additional incomes: текст довший за 255 символів, обрізано в примітці.")
-        MonthLine.objects.create(
-            month=month, line_type=self.line_types[COLUMN_INCOMES], amount=calculations.money(total), note=note[:255]
-        )
+        # Кожен рядок комірки стає окремим записом доходу: сума й примітка.
+        for line in text_lines(raw):
+            income = parse_income_line(line)
+            if income.amount is None:
+                self.report.warn(label, f"Additional incomes: рядок «{line}» не розібрано, записано із сумою 0.")
+            for term in income.foreign:
+                self.report.warn(
+                    label,
+                    f"Additional incomes: {term.amount} {term.currency} з «{line}» не входить у суму (лише гривні).",
+                )
+            if len(income.note) > 255:
+                self.report.warn(label, f"Additional incomes: «{line}» довший за 255 символів, обрізано в примітці.")
+            MonthLine.objects.create(
+                month=month,
+                line_type=self.line_types[COLUMN_INCOMES],
+                amount=calculations.money(income.amount or Decimal("0")),
+                note=income.note[:255],
+            )
 
     def _import_savings(self, month: Month, row: int, label: str) -> None:
         columns = self.sheet.columns

@@ -156,18 +156,21 @@ class ImportTests(TestCase):
         self.assertEqual(october.salary_expression, "=1000+49000")
         self.assertEqual(october.total_expenses, D("72000.00"))
         self.assertEqual(october.notes, "-2000 лампа\n-500 книги")
-        lines = {
-            line.line_type.name: (line.amount, line.amount_expression, line.note)
-            for line in october.lines.select_related("line_type")
-        }
+        lines = [
+            (line.line_type.name, line.amount, line.amount_expression, line.note)
+            for line in october.lines.select_related("line_type").order_by("pk")
+        ]
         self.assertEqual(
             lines,
-            {
-                "Rent": (D("15000.00"), "", ""),
-                "Utility services": (D("1459.00"), "=1259+200", ""),
-                "Additional incomes": (D("4600.00"), "", "3500 + 100€ подарунок; 1100 Петро + Іра"),
-            },
+            [
+                ("Rent", D("15000.00"), "", ""),
+                ("Utility services", D("1459.00"), "=1259+200", ""),
+                # Кожен рядок комірки окремим записом; з євро приміткою лишається весь рядок.
+                ("Additional incomes", D("3500.00"), "", "3500 + 100€ подарунок"),
+                ("Additional incomes", D("1100.00"), "", "Петро + Іра"),
+            ],
         )
+        self.assertEqual(october.income_lines_total, D("4600.00"))
 
     def test_formulas_of_actuals(self):
         book = sample_workbook()

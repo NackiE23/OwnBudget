@@ -1,0 +1,21 @@
+{% comment %}Вміст комірки-списку огляду: записи доходу, Savings або Notes. Його ж повертає збереження запису.{% endcomment %}
+{% if cell.entries %}
+    <ul class="overview-entries">
+        {% for entry in cell.entries %}
+            <li class="overview-entry">
+                {% if entry.amount %}<span class="overview-entry-amount">{{ entry.amount }}</span>{% endif %}
+                <span class="overview-entry-text">{{ entry.text }}</span>
+                {% if editable %}
+                    <span class="overview-entry-actions">
+                        <button type="button" class="overview-icon-button" data-entry-action="edit" data-entry="{{ entry.key }}" data-values="{{ entry.values_json }}" data-summary="{{ entry.summary }}" title="Редагувати запис" aria-label="Редагувати запис"><span class="material-symbols-outlined">edit</span></button>
+                        <button type="button" class="overview-icon-button" data-entry-action="delete" data-entry="{{ entry.key }}" data-values="{{ entry.values_json }}" data-summary="{{ entry.summary }}" title="Видалити запис" aria-label="Видалити запис"><span class="material-symbols-outlined">delete</span></button>
+                    </span>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+{% endif %}
+{% if cell.total %}<div class="overview-entries-total">Разом: {{ cell.total }}</div>{% endif %}
+{% if editable %}
+    <button type="button" class="overview-entry-add" data-entry-action="add"><span class="material-symbols-outlined">add</span>Додати запис</button>
+{% endif %}

@@ -7,8 +7,9 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.models import Group, User
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db.models import Prefetch
-from django.http import HttpRequest, HttpResponseRedirect
+from django.http import HttpRequest, HttpResponseRedirect, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.template.loader import render_to_string
 from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from unfold.admin import ModelAdmin, TabularInline
@@ -19,6 +20,7 @@ from unfold.widgets import BASE_INPUT_CLASSES
 from budget import exports, overview, services
 from budget.models import (
     AllocationCategory,
+    Currency,
     LineType,
     Month,
     MonthAllocation,
@@ -363,6 +365,11 @@ class MonthAdmin(ModelAdmin):
                 self.admin_site.admin_view(self.overview_save_view),
                 name="budget_month_overview_save",
             ),
+            path(
+                "overview/<int:object_id>/entries/<str:kind>/",
+                self.admin_site.admin_view(self.overview_entry_view),
+                name="budget_month_overview_entry",
+            ),
         ]
         return urls + super().get_urls()
 
@@ -381,6 +388,8 @@ class MonthAdmin(ModelAdmin):
             "table": table,
             "input_classes": " ".join(BASE_INPUT_CLASSES),
             "can_change": self.has_change_permission(request),
+            "currencies": Currency.values,
+            "destinations": SavingsDestination.objects.filter(is_active=True).values_list("name", flat=True),
         }
         return TemplateResponse(request, "admin/budget/month/overview.html", context)
 
@@ -406,6 +415,26 @@ class MonthAdmin(ModelAdmin):
         if year.isdigit():
             url += f"?year={year}"
         return HttpResponseRedirect(f"{url}#month-{month.pk}")
+
+    def overview_entry_view(self, request: HttpRequest, object_id: int, kind: str):
+        """
+        Додає, змінює чи видаляє запис у стовпці-списку огляду (доходи, Savings,
+        Notes). Відповідає JSON з новим вмістом комірки, щоб не втратити
+        незбережені зміни в інших полях рядка.
+        """
+        month = get_object_or_404(Month, pk=object_id)
+        if request.method != "POST" or not self.has_change_permission(request, month):
+            raise PermissionDenied
+        try:
+            overview.change_entry(month, kind, request.POST.get("action", ""), request.POST)
+        except (overview.OverviewError, ValidationError) as error:
+            return JsonResponse({"errors": error.messages}, status=400)
+        month = exports.months_queryset(Month.objects.filter(pk=month.pk)).get()
+        cell = overview.entries_cell(month, kind)
+        html = render_to_string(
+            "admin/budget/month/overview_entries.html", {"cell": cell, "editable": True}, request=request
+        )
+        return JsonResponse({"html": html})
 
 
 # --- Записи накопичень ------------------------------------------------------

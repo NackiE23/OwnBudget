@@ -56,6 +56,30 @@ def _term(match: re.Match) -> Term:
     return Term(Decimal(match["number"].replace(",", ".")), currency, match["text"].strip())
 
 
+@dataclass
+class ParsedIncome:
+    amount: Decimal | None  # лише гривні; None, якщо рядок не розібрано
+    note: str
+    foreign: list[Term]  # доданки в іншій валюті: у суму не входять
+
+
+def parse_income_line(line: str) -> ParsedIncome:
+    """
+    Рядок Additional incomes → один запис: «3500 мама» дає 3500 і «мама»,
+    «1048 + 5408 облігації» дає 6456 і «облігації». Якщо текст стоїть не лише
+    в кінці або є інша валюта, приміткою стає весь рядок, щоб нічого не загубити.
+    """
+    line = line.strip()
+    terms = parse_terms(line)
+    if terms is None:
+        return ParsedIncome(None, line, [])
+    uah = [term for term in terms if term.currency == Currency.UAH]
+    foreign = [term for term in terms if term.currency != Currency.UAH]
+    simple = not foreign and not any(term.text for term in terms[:-1])
+    amount = sum((term.amount for term in uah), Decimal("0"))
+    return ParsedIncome(amount, terms[-1].text if simple else line, foreign)
+
+
 def parse_savings_line(line: str) -> list[ParsedEntry]:
     """
     Рядок Savings → записи. «2000+4000 облігації» дає один запис на суму,
