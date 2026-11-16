@@ -17,6 +17,8 @@
         .overview-table .overview-group-start { border-left-width: 1px; }
         .overview-table .overview-editing td { padding: 0.375rem; }
         .overview-table input.overview-input { min-width: 7.5rem; text-align: right; }
+        /* Порожня комірка місяця, який не редагується: прочерк замість пустоти. */
+        .overview-empty { opacity: 0.4; }
 
         /* Рядок і стовпець під курсором трохи темніші, на перетині ще темніше. */
         .overview-table tbody tr.is-hover-row > *,
@@ -124,7 +126,7 @@
                                     {% if cell.kind == "entries" %}
                                         <td class="overview-entries-cell border-b border-base-200 px-3 py-2 dark:border-base-800" data-entry-type="{{ cell.entry_type }}" data-label="{{ cell.label }} · {{ row.month }}"{% if row.editable and can_change %} data-url="{% url 'admin:budget_month_overview_entry' row.month.pk cell.field %}"{% endif %}>{% if row.editable and can_change %}{% include "admin/budget/month/overview_entries.html" with editable=True %}{% else %}{% include "admin/budget/month/overview_entries.html" with editable=False %}{% endif %}</td>
                                     {% else %}
-                                        <td class="overview-{{ cell.kind }} border-b border-base-200 px-3 py-2 dark:border-base-800{% if cell.mark %} overview-mark-{{ cell.mark }}{% endif %}"{% if cell.title %} title="{{ cell.title }}"{% endif %}>{% if row.editable and can_change and cell.field %}<input type="text" inputmode="decimal" name="{{ cell.field }}" value="{{ cell.value }}" form="month-form-{{ row.month.pk }}" class="overview-input {{ input_classes }}" data-formula><div class="overview-result"></div>{% else %}{{ cell.display }}{% endif %}</td>
+                                        <td class="overview-{{ cell.kind }} border-b border-base-200 px-3 py-2 dark:border-base-800{% if cell.mark %} overview-mark-{{ cell.mark }}{% endif %}"{% if cell.title %} title="{{ cell.title }}"{% endif %}>{% if row.editable and can_change and cell.field %}<input type="text" inputmode="decimal" name="{{ cell.field }}" value="{{ cell.value }}" form="month-form-{{ row.month.pk }}" class="overview-input {{ input_classes }}" data-formula><div class="overview-result"></div>{% elif cell.display %}{{ cell.display }}{% else %}<span class="overview-empty">—</span>{% endif %}</td>
                                     {% endif %}
                                 {% endfor %}
                             </tr>

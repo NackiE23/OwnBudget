@@ -15,6 +15,7 @@
         {% endfor %}
     </ul>
 {% endif %}
+{% if not cell.entries and not editable %}<span class="overview-empty">—</span>{% endif %}
 {% if cell.total %}<div class="overview-entries-total">Разом: {{ cell.total }}</div>{% endif %}
 {% if editable %}
     <button type="button" class="overview-entry-add" data-entry-action="add"><span class="material-symbols-outlined">add</span>Додати запис</button>

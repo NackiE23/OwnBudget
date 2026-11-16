@@ -255,6 +255,16 @@ class OverviewViewTests(TestCase):
         self.assertContains(response, reverse("admin:budget_month_change", args=[self.closed.pk]))
         self.assertContains(response, 'colspan="2"')
 
+    def test_empty_cells_of_closed_month_show_dash(self):
+        content = self.client.get(reverse("admin:budget_month_overview")).content.decode()
+        start = content.index(f'id="month-{self.open.pk}"')
+        open_row = content[start : content.index("</tr>", start)]
+        start = content.index(f'id="month-{self.closed.pk}"')
+        closed_row = content[start : content.index("</tr>", start)]
+        # Закритий місяць без рядків витрат, доходів, Savings і Notes: прочерки.
+        self.assertGreaterEqual(closed_row.count('class="overview-empty"'), 5)
+        self.assertNotIn("overview-empty", open_row)
+
     def test_save_redirects_back_with_year(self):
         url = reverse("admin:budget_month_overview_save", args=[self.open.pk])
         response = self.client.post(url, {"salary": "60000", "year": "2025"})
