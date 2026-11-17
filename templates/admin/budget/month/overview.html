@@ -58,6 +58,33 @@
         .overview-entry-add:hover { background-color: var(--overview-hover); opacity: 1; }
         .overview-entry-add .material-symbols-outlined { font-size: 1.125rem; }
 
+        /* Кнопка підказки з OwnExpenses біля «Як Є» і Total expenses. */
+        .overview-input-wrap { align-items: center; display: flex; gap: 0.125rem; }
+        .overview-input-wrap .overview-input { flex: 1; }
+        .overview-suggest-button { opacity: 0.45; }
+        .overview-suggest-button:hover, .overview-suggest-button:focus-visible { opacity: 1; }
+        .overview-suggest-button.is-used { opacity: 1; }
+
+        /* Вікно підказки: витрати OwnExpenses місяця за категоріями. */
+        .overview-dialog.overview-suggest-dialog { width: 34rem; }
+        .overview-suggest-intro { font-size: 0.875rem; margin-bottom: 0.75rem; opacity: 0.8; }
+        .overview-suggest-list { border-bottom-width: 1px; border-top-width: 1px; max-height: min(55vh, 28rem); overflow-y: auto; padding: 0.25rem 0; }
+        /* .overview-dialog у селекторі: інакше перебиває загальне правило для label у вікні. */
+        .overview-dialog .overview-suggest-item { align-items: center; border-radius: 0.25rem; cursor: pointer; display: flex; font-weight: 500; gap: 0.5rem; margin: 0; padding: 0.25rem 0.375rem; }
+        .overview-dialog .overview-suggest-item:hover { background-color: rgba(15, 23, 42, 0.05); }
+        .dark .overview-dialog .overview-suggest-item:hover { background-color: rgba(255, 255, 255, 0.06); }
+        .overview-dialog .overview-suggest-item.is-child { font-size: 0.875rem; font-weight: 400; padding-left: 2rem; }
+        .overview-suggest-dialog .overview-suggest-item input { flex-shrink: 0; width: auto; }
+        .overview-suggest-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+        .overview-suggest-used { border-radius: 9999px; font-size: 0.75rem; opacity: 0.75; padding: 0 0.375rem; white-space: nowrap; background-color: rgba(15, 23, 42, 0.07); }
+        .dark .overview-suggest-used { background-color: rgba(255, 255, 255, 0.1); }
+        .overview-suggest-amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .overview-suggest-summary { display: grid; font-size: 0.875rem; gap: 0.25rem 0.75rem; grid-template-columns: auto 1fr; margin-top: 0.75rem; }
+        .overview-suggest-summary dt { opacity: 0.7; }
+        .overview-suggest-summary dd { font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+        .overview-suggest-tools { display: flex; font-size: 0.875rem; gap: 0.75rem; margin-bottom: 0.5rem; }
+        .overview-suggest-tools button { text-decoration: underline; opacity: 0.8; }
+
         /* Вікно запису. */
         .overview-dialog { border-radius: 0.5rem; max-width: calc(100vw - 2rem); padding: 1.25rem; width: 28rem; }
         .overview-dialog::backdrop { background-color: rgba(0, 0, 0, 0.45); }
@@ -126,7 +153,7 @@
                                     {% if cell.kind == "entries" %}
                                         <td class="overview-entries-cell border-b border-base-200 px-3 py-2 dark:border-base-800" data-entry-type="{{ cell.entry_type }}" data-label="{{ cell.label }} · {{ row.month }}"{% if row.editable and can_change %} data-url="{% url 'admin:budget_month_overview_entry' row.month.pk cell.field %}"{% endif %}>{% if row.editable and can_change %}{% include "admin/budget/month/overview_entries.html" with editable=True %}{% else %}{% include "admin/budget/month/overview_entries.html" with editable=False %}{% endif %}</td>
                                     {% else %}
-                                        <td class="overview-{{ cell.kind }} border-b border-base-200 px-3 py-2 dark:border-base-800{% if cell.mark %} overview-mark-{{ cell.mark }}{% endif %}"{% if cell.title %} title="{{ cell.title }}"{% endif %}>{% if row.editable and can_change and cell.field %}<input type="text" inputmode="decimal" name="{{ cell.field }}" value="{{ cell.value }}" form="month-form-{{ row.month.pk }}" class="overview-input {{ input_classes }}" data-formula><div class="overview-result"></div>{% elif cell.display %}{{ cell.display }}{% else %}<span class="overview-empty">—</span>{% endif %}</td>
+                                        <td class="overview-{{ cell.kind }} border-b border-base-200 px-3 py-2 dark:border-base-800{% if cell.mark %} overview-mark-{{ cell.mark }}{% endif %}"{% if cell.title %} title="{{ cell.title }}"{% endif %}>{% if row.editable and can_change and cell.field %}{% if cell.suggest %}<div class="overview-input-wrap"><input type="text" inputmode="decimal" name="{{ cell.field }}" value="{{ cell.value }}" form="month-form-{{ row.month.pk }}" class="overview-input {{ input_classes }}" data-formula><button type="button" class="overview-icon-button overview-suggest-button" data-suggest="{{ row.month.pk }}" data-suggest-field="{{ cell.field }}" data-suggest-label="{{ cell.label }}" title="Підказати суму з витрат OwnExpenses" aria-label="Підказати суму з витрат OwnExpenses"><span class="material-symbols-outlined">playlist_add_check</span></button></div>{% else %}<input type="text" inputmode="decimal" name="{{ cell.field }}" value="{{ cell.value }}" form="month-form-{{ row.month.pk }}" class="overview-input {{ input_classes }}" data-formula>{% endif %}<div class="overview-result"></div>{% elif cell.display %}{{ cell.display }}{% else %}<span class="overview-empty">—</span>{% endif %}</td>
                                     {% endif %}
                                 {% endfor %}
                             </tr>
@@ -190,6 +217,29 @@
                     </div>
                 </form>
             </dialog>
+
+            {% if expense_suggestions %}
+                {{ expense_suggestions|json_script:"expense-suggestions" }}
+                <dialog id="suggest-dialog" class="overview-dialog overview-suggest-dialog bg-white border border-base-200 text-font-default-light dark:bg-base-900 dark:border-base-700 dark:text-font-default-dark">
+                    <form id="suggest-form" method="dialog" novalidate>
+                        <h2 class="font-semibold mb-2 text-base text-font-important-light dark:text-font-important-dark" data-suggest-title></h2>
+                        <p class="overview-suggest-intro" data-suggest-intro></p>
+                        <div class="overview-suggest-tools">
+                            <button type="button" data-suggest-all>Обрати все</button>
+                            <button type="button" data-suggest-none>Зняти все</button>
+                        </div>
+                        <div class="overview-suggest-list" data-suggest-list></div>
+                        <dl class="overview-suggest-summary">
+                            <dt>Обрано</dt><dd data-suggest-sum></dd>
+                            <dt>У поле</dt><dd data-suggest-formula></dd>
+                        </dl>
+                        <div class="overview-buttons">
+                            <button type="button" class="border border-base-200 px-3 py-1.5 rounded-default dark:border-base-700" data-suggest-cancel>Скасувати</button>
+                            <button type="submit" class="bg-primary-600 font-medium px-3 py-1.5 rounded-default text-white" data-suggest-insert>Вставити</button>
+                        </div>
+                    </form>
+                </dialog>
+            {% endif %}
         {% endif %}
 
         <script>
@@ -243,8 +293,13 @@
                     return whole.replace(/\B(?=(\d{3})+(?!\d))/g, " ") + "." + cents;
                 }
 
+                // Під полем: у комірці таблиці або в полі вікна запису.
+                function resultOf(input) {
+                    return input.closest("td, .overview-field").querySelector(".overview-result");
+                }
+
                 function showResult(input) {
-                    const result = input.nextElementSibling;
+                    const result = resultOf(input);
                     const text = input.value.trim();
                     const isFormula = /[-+*/()]/.test(text.replace(/^[-=]/, ""));
                     result.classList.remove("is-error");
@@ -288,6 +343,178 @@
                     });
                     body.addEventListener("mouseleave", clearHover);
                 }
+
+                // --- підказка сум з OwnExpenses ------------------------------
+                // Категорії телефона не прив'язані до категорій бюджету: людина сама
+                // обирає, які витрати місяця скласти в поле. Обране вписується в поле
+                // (формулою, якщо доданків кілька), а зберігає кнопка «Зберегти» рядка.
+                (function () {
+                    const dataScript = document.getElementById("expense-suggestions");
+                    const suggestDialog = document.getElementById("suggest-dialog");
+                    if (!dataScript || !suggestDialog || !table) return;
+                    const months = JSON.parse(dataScript.textContent);
+                    const list = suggestDialog.querySelector("[data-suggest-list]");
+                    const sumOutput = suggestDialog.querySelector("[data-suggest-sum]");
+                    const formulaOutput = suggestDialog.querySelector("[data-suggest-formula]");
+                    const insert = suggestDialog.querySelector("[data-suggest-insert]");
+                    // Що вже вставлено в поля місяця на цій сторінці: monthPk → поле → {label, keys}.
+                    const used = {};
+                    let current = null;
+
+                    const cents = (amount) => Math.round(parseFloat(amount) * 100);
+                    const fromCents = (value) => money(value / 100);
+                    // Число для поля без зайвих нулів, як на сервері: 1200, 99.5.
+                    const plain = (value) => String(value / 100);
+
+                    // З чого складається сума категорії: її підкатегорії або вона сама.
+                    function leaves(group) {
+                        return group.children.length ? group.children : [group];
+                    }
+
+                    function usedElsewhere(key) {
+                        const fields = used[current.month] || {};
+                        return Object.entries(fields)
+                            .filter(([field, entry]) => field !== current.field && entry.keys.includes(key))
+                            .map(([, entry]) => entry.label);
+                    }
+
+                    function item(total, isChild) {
+                        const label = document.createElement("label");
+                        label.className = "overview-suggest-item" + (isChild ? " is-child" : "");
+                        const box = document.createElement("input");
+                        box.type = "checkbox";
+                        const name = document.createElement("span");
+                        name.className = "overview-suggest-name";
+                        name.textContent = total.name;
+                        label.append(box, name);
+                        const places = usedElsewhere(total.key);
+                        if (places.length) {
+                            const tag = document.createElement("span");
+                            tag.className = "overview-suggest-used";
+                            tag.textContent = "→ " + places.join(", ");
+                            tag.title = "Уже вставлено в інше поле цього місяця";
+                            label.append(tag);
+                        }
+                        const amount = document.createElement("span");
+                        amount.className = "overview-suggest-amount";
+                        amount.textContent = fromCents(cents(total.amount));
+                        label.append(amount);
+                        return { label, box };
+                    }
+
+                    function render(selected) {
+                        list.replaceChildren();
+                        current.groups = current.data.groups.map((group) => {
+                            const parent = item(group, false);
+                            list.append(parent.label);
+                            const children = group.children.map((child) => {
+                                const row = item(child, true);
+                                list.append(row.label);
+                                return { total: child, box: row.box };
+                            });
+                            const parts = children.length ? children : [{ total: group, box: parent.box }];
+                            parts.forEach(({ total, box }) => { box.checked = selected.has(total.key); });
+                            if (children.length) {
+                                parent.box.addEventListener("change", () => {
+                                    children.forEach(({ box }) => { box.checked = parent.box.checked; });
+                                    update();
+                                });
+                                children.forEach(({ box }) => box.addEventListener("change", update));
+                            } else {
+                                parent.box.addEventListener("change", update);
+                            }
+                            return { group, parent: parent.box, parts };
+                        });
+                        update();
+                    }
+
+                    // Доданки: уся категорія однією сумою, якщо обрано всі її підкатегорії.
+                    function terms() {
+                        const result = [];
+                        current.groups.forEach(({ group, parent, parts }) => {
+                            const chosen = parts.filter(({ box }) => box.checked);
+                            if (group.children.length) {
+                                parent.checked = chosen.length === parts.length;
+                                parent.indeterminate = chosen.length > 0 && chosen.length < parts.length;
+                            }
+                            if (!chosen.length) return;
+                            if (chosen.length === parts.length) {
+                                result.push({ cents: cents(group.amount), keys: parts.map(({ total }) => total.key) });
+                            } else {
+                                chosen.forEach(({ total }) => result.push({ cents: cents(total.amount), keys: [total.key] }));
+                            }
+                        });
+                        return result;
+                    }
+
+                    function update() {
+                        const chosen = terms();
+                        const total = chosen.reduce((sum, term) => sum + term.cents, 0);
+                        // Total expenses зберігає лише результат, тож туди одразу число.
+                        let formula = "";
+                        if (chosen.length > 1 && !current.isTotal) formula = "=" + chosen.map((term) => plain(term.cents)).join("+");
+                        else if (chosen.length) formula = plain(total);
+                        sumOutput.textContent = chosen.length ? fromCents(total) + " з " + fromCents(cents(current.data.total)) : "нічого";
+                        formulaOutput.textContent = formula || "—";
+                        insert.disabled = !chosen.length;
+                        insert.classList.toggle("opacity-50", !chosen.length);
+                        current.formula = formula;
+                        current.keys = chosen.flatMap((term) => term.keys);
+                    }
+
+                    function open(button) {
+                        const month = button.dataset.suggest;
+                        const data = months[month];
+                        if (!data) return;
+                        current = {
+                            month,
+                            data,
+                            button,
+                            input: button.parentElement.querySelector("input"),
+                            field: button.dataset.suggestField,
+                            label: button.dataset.suggestLabel,
+                        };
+                        const isTotal = current.isTotal = current.field === "total_expenses";
+                        suggestDialog.querySelector("[data-suggest-title]").textContent = current.label + " · " + data.label;
+                        suggestDialog.querySelector("[data-suggest-intro]").textContent =
+                            "Витрати OwnExpenses за " + data.label + ": " + fromCents(cents(data.total)) + ". " +
+                            (isTotal ? "Обрано всі." : "Оберіть категорії, що належать до цього поля.") +
+                            " Сума підставиться в поле, а збереже її кнопка «Зберегти» рядка.";
+                        const previous = (used[month] || {})[current.field];
+                        let selected = new Set();
+                        if (previous) selected = new Set(previous.keys);
+                        else if (isTotal) selected = new Set(data.groups.flatMap((group) => leaves(group).map((leaf) => leaf.key)));
+                        render(selected);
+                        suggestDialog.showModal();
+                        (list.querySelector("input:checked") || list.querySelector("input"))?.focus();
+                    }
+
+                    function setAll(checked) {
+                        current.groups.forEach(({ parts }) => parts.forEach(({ box }) => { box.checked = checked; }));
+                        update();
+                    }
+
+                    suggestDialog.querySelector("[data-suggest-all]").addEventListener("click", () => setAll(true));
+                    suggestDialog.querySelector("[data-suggest-none]").addEventListener("click", () => setAll(false));
+                    suggestDialog.querySelector("[data-suggest-cancel]").addEventListener("click", () => suggestDialog.close());
+                    suggestDialog.querySelector("form").addEventListener("submit", (event) => {
+                        event.preventDefault();
+                        if (!current.formula) return;
+                        current.input.value = current.formula;
+                        current.input.dispatchEvent(new Event("input", { bubbles: true }));
+                        used[current.month] = used[current.month] || {};
+                        used[current.month][current.field] = { label: current.label.replace(/: Як Є$/, ""), keys: current.keys };
+                        current.button.classList.add("is-used", "text-primary-600", "dark:text-primary-500");
+                        current.button.title = "Вставлено з OwnExpenses. Натисніть, щоб змінити вибір.";
+                        suggestDialog.close();
+                        current.input.focus();
+                    });
+
+                    table.addEventListener("click", (event) => {
+                        const button = event.target.closest("[data-suggest]");
+                        if (button) open(button);
+                    });
+                })();
 
                 // --- записи доходів, Savings і Notes ---------------------------
                 const dialog = document.getElementById("entry-dialog");
@@ -389,7 +616,7 @@
                         required.focus();
                         return false;
                     }
-                    if (fields.amount.nextElementSibling.classList.contains("is-error") && !fields.amount.disabled) {
+                    if (resultOf(fields.amount).classList.contains("is-error") && !fields.amount.disabled) {
                         errors.textContent = "Сума: помилка у формулі.";
                         fields.amount.focus();
                         return false;

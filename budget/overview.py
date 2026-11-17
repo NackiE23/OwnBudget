@@ -4,8 +4,11 @@
 позначкою. Відкриті місяці редагуються просто в таблиці, крім відсотків.
 Доходи (Additional incomes), Savings і Notes це списки записів: кожен запис
 додається, редагується й видаляється окремо, у вікні поверх таблиці.
+Біля «Як Є» і Total expenses відкритого місяця є підказка: витрати
+OwnExpenses за цей місяць за категоріями, з яких можна скласти суму.
 """
 
+import datetime
 import json
 from collections.abc import Iterable, Mapping
 import dataclasses
@@ -107,6 +110,7 @@ class Cell:
     # dataclasses.field: ім'я field у цьому класі зайняте полем форми.
     entries: list[Entry] = dataclasses.field(default_factory=list)
     total: str = ""
+    suggest: bool = False  # чи є витрати OwnExpenses, з яких підказати суму
 
 
 @dataclass
@@ -117,9 +121,11 @@ class Row:
 
 
 class Overview:
-    def __init__(self, months: Iterable[Month]):
+    def __init__(self, months: Iterable[Month], suggest_periods: Iterable[datetime.date] = ()):
         self.months = list(months)
         self.line_types, self.categories = table_columns(self.months)
+        # Місяці, для яких є витрати OwnExpenses: там біля сум є кнопка підказки.
+        self.suggest_periods = set(suggest_periods)
 
     @property
     def header_top(self) -> list[HeaderCell]:
@@ -145,12 +151,15 @@ class Overview:
 
     def row(self, month: Month) -> Row:
         row = Row(month=month, editable=not month.is_closed)
+        suggest = row.editable and month.period in self.suggest_periods
         row.cells.append(
             Cell(
                 display=money_display(month.total_expenses_effective),
                 field=TOTAL_EXPENSES,
                 value=amount_value(month.total_expenses),
                 title="" if month.total_expenses is not None else "Порожньо: показано суму рядків витрат.",
+                label="Total expenses",
+                suggest=suggest,
             )
         )
         row.cells.append(
@@ -198,6 +207,8 @@ class Overview:
                     field=actual_field(category.pk),
                     value=expression or amount_value(actual),
                     title=" · ".join(text for text in (expression, allocation.mark_label if allocation else "") if text),
+                    label=f"{category.name}: Як Є",
+                    suggest=suggest,
                 )
             )
             limit_cell = Cell(display=money_display(limit), value=amount_value(limit))
@@ -210,6 +221,30 @@ class Overview:
         row.cells.append(Cell(display=money_display(month.unallocated)))
         row.cells.append(Cell(display=month.get_status_display(), kind="plain"))
         return row
+
+
+def expense_suggestions(months: Iterable[Month], breakdowns: Mapping[datetime.date, object]) -> dict[str, dict]:
+    """
+    Дані для вікна підказки: витрати OwnExpenses кожного місяця за категоріями,
+    ключ це pk місяця. breakdowns дає expenses.analytics.monthly_expenses.
+    """
+
+    def item(total) -> dict:
+        return {"key": total.key, "name": total.name, "amount": plain_number(total.amount), "count": total.count}
+
+    result = {}
+    for month in months:
+        breakdown = breakdowns.get(month.period)
+        if breakdown is None:
+            continue
+        result[str(month.pk)] = {
+            "label": str(month),
+            "total": plain_number(breakdown.total),
+            "groups": [
+                {**item(group), "children": [item(child) for child in group.children]} for group in breakdown.groups
+            ],
+        }
+    return result
 
 
 def income_cell(line_type: LineType, lines: list[MonthLine]) -> Cell:

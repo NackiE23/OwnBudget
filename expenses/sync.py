@@ -51,7 +51,7 @@ class SyncResult:
 
 
 def from_millis(value: int) -> datetime.datetime:
-    return datetime.datetime.fromtimestamp(value / 1000, tz=datetime.UTC)
+    return datetime.datetime.fromtimestamp(value / 1000, tz=datetime.timezone.utc)
 
 
 def apply_batch(device: Device, data: dict) -> dict:

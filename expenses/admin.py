@@ -15,6 +15,7 @@ from unfold.admin import ModelAdmin
 from unfold.contrib.filters.admin import RangeDateFilter
 from unfold.decorators import action, display
 
+from expenses.analytics import category_breakdown
 from expenses.api.authentication import issue_token
 from expenses.formatting import money
 from expenses.models import Category, Device, Operation, OperationType, SyncBatch
@@ -95,13 +96,22 @@ class OperationAdmin(ReadOnlyAdmin):
             return response
         today = timezone.localdate()
         alive = Operation.objects.alive()
+        is_filtered = context["cl"].has_active_filters or bool(context["cl"].query)
+        month = alive.filter(date__year=today.year, date__month=today.month)
         context["stats"] = {
             "filtered": totals(context["cl"].queryset),
-            "is_filtered": context["cl"].has_active_filters or bool(context["cl"].query),
-            "month": totals(alive.filter(date__year=today.year, date__month=today.month)),
+            "is_filtered": is_filtered,
+            "month": totals(month),
             "all": totals(alive),
             "month_label": today.strftime("%m.%Y"),
         }
+        # Розбивка за категоріями для того самого, що й перша картка: фільтр або поточний місяць.
+        scope = context["cl"].queryset if is_filtered else month
+        context["breakdowns"] = [
+            (title, breakdown)
+            for title, operation_type in [("Витрати", OperationType.EXPENSE), ("Надходження", OperationType.INCOME)]
+            if (breakdown := category_breakdown(scope, operation_type)).groups
+        ]
         context["last_sync"] = SyncBatch.objects.select_related("device").first()
         context["devices"] = Device.objects.filter(is_active=True)
         return response

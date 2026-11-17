@@ -8,6 +8,23 @@
     .expenses-card dl { display: grid; gap: 0.25rem 1rem; grid-template-columns: auto 1fr; font-size: 0.875rem; }
     .expenses-card dt { opacity: 0.75; }
     .expenses-card dd { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+    @media (min-width: 48rem) { .expenses-card-wide { grid-column: span 2; } }
+    .expenses-card-head { align-items: baseline; display: flex; flex-wrap: wrap; gap: 0 0.75rem; justify-content: space-between; }
+    .expenses-card-subtitle { font-size: 0.875rem; font-weight: 400; opacity: 0.75; }
+    .expenses-categories { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.875rem; }
+    .expenses-category { align-items: baseline; display: grid; gap: 0 0.75rem; grid-template-columns: 1fr auto auto; }
+    .expenses-category-name { align-items: center; display: inline-flex; gap: 0.125rem; min-width: 0; overflow-wrap: anywhere; }
+    .expenses-category-share { font-variant-numeric: tabular-nums; opacity: 0.6; text-align: right; }
+    .expenses-category-amount { font-variant-numeric: tabular-nums; min-width: 6rem; text-align: right; white-space: nowrap; }
+    .expenses-category-bar { background-color: rgba(15, 23, 42, 0.07); border-radius: 9999px; grid-column: 1 / -1; height: 0.25rem; margin: 0.125rem 0 0.25rem; overflow: hidden; }
+    .dark .expenses-category-bar { background-color: rgba(255, 255, 255, 0.1); }
+    .expenses-category-bar > span { border-radius: 9999px; display: block; height: 100%; }
+    .expenses-categories summary { cursor: pointer; list-style: none; }
+    .expenses-categories summary::-webkit-details-marker { display: none; }
+    .expenses-category-toggle { font-size: 1.125rem; opacity: 0.6; transition: transform 0.15s; }
+    .expenses-categories details[open] .expenses-category-toggle { transform: rotate(180deg); }
+    .expenses-subcategories { display: flex; flex-direction: column; gap: 0.125rem; margin: 0 0 0.375rem 1rem; opacity: 0.85; }
+    .expenses-category-total { border-top-width: 1px; font-size: 0.875rem; font-weight: 600; margin-top: 0.5rem; padding-top: 0.375rem; }
 </style>
 <div class="expenses-stats">
     <div class="expenses-sync bg-white border border-base-200 px-4 py-3 rounded-default shadow-xs dark:bg-base-900 dark:border-base-800">
@@ -35,5 +52,12 @@
             {% include "admin/expenses/operation/stats_card.html" with title="Поточний місяць, "|add:stats.month_label totals=stats.month %}
         {% endif %}
         {% include "admin/expenses/operation/stats_card.html" with title="За весь час" totals=stats.all balance=True %}
+        {% for title, breakdown in breakdowns %}
+            {% if stats.is_filtered %}
+                {% include "admin/expenses/operation/stats_categories.html" with scope="за фільтром" %}
+            {% else %}
+                {% include "admin/expenses/operation/stats_categories.html" with scope="поточний місяць, "|add:stats.month_label %}
+            {% endif %}
+        {% endfor %}
     </div>
 </div>

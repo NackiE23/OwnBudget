@@ -29,6 +29,7 @@ from budget.models import (
     SavingsDestination,
     SavingsEntry,
 )
+from expenses import analytics
 
 
 OVERVIEW_ALL_YEARS = "all"
@@ -385,7 +386,11 @@ class MonthAdmin(ModelAdmin):
             queryset = queryset.filter(period__year=int(year))
         else:
             year = OVERVIEW_ALL_YEARS
-        table = overview.Overview(exports.months_queryset(queryset))
+        months = list(exports.months_queryset(queryset))
+        can_change = self.has_change_permission(request)
+        # Підказки з OwnExpenses лише там, де суму можна вписати: відкриті місяці.
+        breakdowns = analytics.monthly_expenses([m.period for m in months if not m.is_closed]) if can_change else {}
+        table = overview.Overview(months, suggest_periods=breakdowns)
         context = {
             **self.admin_site.each_context(request),
             "opts": self.model._meta,
@@ -397,7 +402,8 @@ class MonthAdmin(ModelAdmin):
             "selected_year": year,
             "table": table,
             "input_classes": " ".join(BASE_INPUT_CLASSES),
-            "can_change": self.has_change_permission(request),
+            "can_change": can_change,
+            "expense_suggestions": overview.expense_suggestions(months, breakdowns),
             "currencies": Currency.values,
             "destinations": SavingsDestination.objects.filter(is_active=True).values_list("name", flat=True),
         }

@@ -1,0 +1,45 @@
+{% load expenses_money %}
+{% comment %}Картка розбивки операцій одного типу за категоріями: сума, частка й смужка частки. Підкатегорії розгортаються.{% endcomment %}
+<div class="expenses-card expenses-card-wide bg-white border border-base-200 px-4 py-3 rounded-default shadow-xs dark:bg-base-900 dark:border-base-800">
+    <div class="expenses-card-head font-semibold mb-2 text-font-important-light dark:text-font-important-dark">
+        <span>{{ title }} за категоріями</span>
+        <span class="expenses-card-subtitle">{{ scope }}</span>
+    </div>
+    <ul class="expenses-categories">
+        {% for group in breakdown.groups %}
+            <li>
+                {% if group.children %}
+                    <details>
+                        <summary class="expenses-category">
+                            <span class="expenses-category-name">{{ group.name }}<span class="material-symbols-outlined expenses-category-toggle">expand_more</span></span>
+                            <span class="expenses-category-share">{{ group.share }}%</span>
+                            <span class="expenses-category-amount">{{ group.amount|money }}</span>
+                            <span class="expenses-category-bar"><span class="bg-primary-600 dark:bg-primary-500" style="width: {{ group.share|stringformat:'s' }}%"></span></span>
+                        </summary>
+                        <ul class="expenses-subcategories">
+                            {% for child in group.children %}
+                                <li class="expenses-category">
+                                    <span class="expenses-category-name">{{ child.name }}</span>
+                                    <span class="expenses-category-share">{{ child.share }}%</span>
+                                    <span class="expenses-category-amount">{{ child.amount|money }}</span>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                {% else %}
+                    <div class="expenses-category">
+                        <span class="expenses-category-name">{{ group.name }}</span>
+                        <span class="expenses-category-share">{{ group.share }}%</span>
+                        <span class="expenses-category-amount">{{ group.amount|money }}</span>
+                        <span class="expenses-category-bar"><span class="bg-primary-600 dark:bg-primary-500" style="width: {{ group.share|stringformat:'s' }}%"></span></span>
+                    </div>
+                {% endif %}
+            </li>
+        {% endfor %}
+    </ul>
+    <div class="expenses-category expenses-category-total">
+        <span class="expenses-category-name">Разом</span>
+        <span class="expenses-category-share"></span>
+        <span class="expenses-category-amount">{{ breakdown.total|money }}</span>
+    </div>
+</div>
