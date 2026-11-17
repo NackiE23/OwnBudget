@@ -61,6 +61,13 @@ def limit_field(category_id: int) -> str:
     return f"limit-{category_id}"
 
 
+def shown(value: Decimal | None, expression: str = "") -> str:
+    """Значення для історії: сума, а за нею формула, з якої вона вийшла."""
+    if value is None:
+        return "порожньо"
+    return f"{money_display(value)} ({expression})" if expression else money_display(value)
+
+
 def note_lines(month: Month) -> list[str]:
     """Нотатки місяця як записи: кожен непорожній рядок окремо."""
     return [line.strip() for line in month.notes.splitlines() if line.strip()]
@@ -317,13 +324,19 @@ class OverviewError(ValueError):
 
 
 @transaction.atomic
-def save_month(month: Month, data: Mapping[str, str]) -> None:
+def save_month(month: Month, data: Mapping[str, str]) -> list[str]:
     """
     Зберігає рядок огляду. Оброблюються лише поля, що прийшли у формі.
-    Помилка в будь-якому полі скасовує все збереження.
+    Помилка в будь-якому полі скасовує все збереження. Повертає зміни
+    «поле: було → стало» для історії місяця.
     """
     month.ensure_open()
     errors: list[str] = []
+    changes: list[str] = []
+
+    def changed(label: str, old: tuple[Decimal | None, str], new: tuple[Decimal | None, str]) -> None:
+        if old != new:
+            changes.append(f"{label}: {shown(*old)} → {shown(*new)}")
 
     def amount(name: str, label: str) -> tuple[Decimal | None, str]:
         try:
@@ -335,10 +348,13 @@ def save_month(month: Month, data: Mapping[str, str]) -> None:
 
     if SALARY in data:
         salary, expression = amount(SALARY, "Salary")
-        month.salary = salary if salary is not None else Decimal("0")
-        month.salary_expression = expression
+        salary = salary if salary is not None else Decimal("0")
+        changed("Salary", (month.salary, month.salary_expression), (salary, expression))
+        month.salary, month.salary_expression = salary, expression
     if TOTAL_EXPENSES in data:
-        month.total_expenses, _ = amount(TOTAL_EXPENSES, "Total expenses")
+        total_expenses, _ = amount(TOTAL_EXPENSES, "Total expenses")
+        changed("Total expenses", (month.total_expenses, ""), (total_expenses, ""))
+        month.total_expenses = total_expenses
 
     line_values = {}
     lines: dict[int, list[MonthLine]] = {}
@@ -372,6 +388,9 @@ def save_month(month: Month, data: Mapping[str, str]) -> None:
 
     for pk, (value, expression) in line_values.items():
         own = lines.get(pk, [])
+        old = (own[0].amount, own[0].amount_expression) if own else (None, "")
+        new = (value or Decimal("0"), expression) if own or value is not None else (None, "")
+        changed(line_types[pk].name, old, new)
         if own:
             own[0].amount = value or Decimal("0")
             own[0].amount_expression = expression
@@ -381,6 +400,13 @@ def save_month(month: Month, data: Mapping[str, str]) -> None:
 
     for category, values in allocation_values.items():
         allocation = allocations.get(category.pk)
+        if "actual" in values:
+            old = (allocation.actual, allocation.actual_expression) if allocation else (None, "")
+            changed(f"{category.name}: Як Є", old, (values["actual"], values["actual_expression"]))
+        if "limit_amount" in values:
+            limit = "Ціль" if category.kind == AllocationCategory.Kind.SAVINGS_POOL else "Межа"
+            old = (allocation.limit_amount if allocation else None, "")
+            changed(f"{category.name}: {limit}", old, (values["limit_amount"], ""))
         if allocation is None:
             if all(value in (None, "") for value in values.values()):
                 continue
@@ -393,6 +419,7 @@ def save_month(month: Month, data: Mapping[str, str]) -> None:
             allocation.save(update_fields=changed)
 
     services.recalculate_with_following(month)
+    return changes
 
 
 # --- записи в комірках-списках ----------------------------------------------
@@ -412,20 +439,36 @@ def income_type(kind: str) -> LineType:
 
 
 @transaction.atomic
-def change_entry(month: Month, kind: str, action: str, data: Mapping[str, str]) -> None:
+def change_entry(month: Month, kind: str, action: str, data: Mapping[str, str]) -> str:
     """
     Додає (add), змінює (edit) чи видаляє (delete) один запис у стовпці
     доходу, Savings або Notes. data["entry"] вказує запис для edit і delete.
+    Повертає опис зміни для історії місяця; порожньо, якщо нічого не змінилось.
     """
     month.ensure_open()
     if action not in (ADD, EDIT, DELETE):
         raise OverviewError(["Невідома дія."])
     if kind == SAVINGS:
-        _change_savings(month, action, data)
+        label = "Savings"
+        old, new = _change_savings(month, action, data)
     elif kind == NOTES:
-        _change_note(month, action, data)
+        label = "Notes"
+        old, new = _change_note(month, action, data)
     else:
-        _change_income(month, income_type(kind), action, data)
+        line_type = income_type(kind)
+        label = line_type.name
+        old, new = _change_income(month, line_type, action, data)
+    if old == new:
+        return ""
+    if action == ADD:
+        return f"{label}: додано «{new}»"
+    if action == DELETE:
+        return f"{label}: видалено «{old}»"
+    return f"{label}: «{old}» → «{new}»"
+
+
+def _summary(*parts: str) -> str:
+    return " · ".join(part for part in parts if part)
 
 
 def _stale() -> OverviewError:
@@ -449,33 +492,46 @@ def _note(data: Mapping[str, str]) -> str:
     return note
 
 
-def _change_income(month: Month, line_type: LineType, action: str, data: Mapping[str, str]) -> None:
+def _income_text(line: MonthLine) -> str:
+    return _summary(shown(line.amount, line.amount_expression), line.note)
+
+
+def _change_income(month: Month, line_type: LineType, action: str, data: Mapping[str, str]) -> tuple[str, str]:
     line = None
     if action != ADD:
         key = data.get("entry", "")
         line = month.lines.filter(line_type=line_type, pk=key).first() if key.isdigit() else None
         if line is None:
             raise _stale()
+    old = _income_text(line) if line else ""
     if action == DELETE:
         line.delete()
-        return
+        return old, ""
     amount, expression = _required_amount(data.get("amount", ""))
     note = _note(data)
     line = line or MonthLine(month=month, line_type=line_type)
     line.amount, line.amount_expression, line.note = amount, expression, note
     line.save()
+    return old, _income_text(line)
 
 
-def _change_savings(month: Month, action: str, data: Mapping[str, str]) -> None:
+def _savings_text(entry: SavingsEntry) -> str:
+    if entry.amount is None:
+        return entry.raw_text or entry.note
+    return _summary(savings_amount_display(entry), entry.destination.name if entry.destination else "", entry.note)
+
+
+def _change_savings(month: Month, action: str, data: Mapping[str, str]) -> tuple[str, str]:
     entry = None
     if action != ADD:
         key = data.get("entry", "")
         entry = month.savings_entries.filter(pk=key).first() if key.isdigit() else None
         if entry is None:
             raise _stale()
+    old = _savings_text(entry) if entry else ""
     if action == DELETE:
         entry.delete()
-        return
+        return old, ""
     amount, _ = _required_amount(data.get("amount", ""))
     currency = data.get("currency") or Currency.UAH
     if currency not in Currency.values:
@@ -487,6 +543,7 @@ def _change_savings(month: Month, action: str, data: Mapping[str, str]) -> None:
     # Запис тепер структурований: рядок з Excel йому більше не відповідає.
     entry.raw_text = ""
     entry.save()
+    return old, _savings_text(entry)
 
 
 def _destination(name: str) -> SavingsDestination | None:
@@ -500,7 +557,7 @@ def _destination(name: str) -> SavingsDestination | None:
     return existing or SavingsDestination.objects.create(name=name)
 
 
-def _change_note(month: Month, action: str, data: Mapping[str, str]) -> None:
+def _change_note(month: Month, action: str, data: Mapping[str, str]) -> tuple[str, str]:
     lines = note_lines(month)
     index = -1
     if action != ADD:
@@ -509,15 +566,18 @@ def _change_note(month: Month, action: str, data: Mapping[str, str]) -> None:
         # Нотатки адресуються номером рядка, тож перевіряємо, що рядок той самий.
         if not 0 <= index < len(lines) or lines[index] != data.get("original", "").strip():
             raise _stale()
+    old = lines[index] if action != ADD else ""
+    new = ""
     if action == DELETE:
         del lines[index]
     else:
-        text = " ".join(data.get("text", "").split())
-        if not text:
+        new = " ".join(data.get("text", "").split())
+        if not new:
             raise OverviewError(["Нотатка порожня."])
         if action == ADD:
-            lines.append(text)
+            lines.append(new)
         else:
-            lines[index] = text
+            lines[index] = new
     month.notes = "\n".join(lines)
     month.save(update_fields=["notes", "updated_at"])
+    return old, new

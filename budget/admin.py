@@ -414,7 +414,7 @@ class MonthAdmin(ModelAdmin):
         if request.method != "POST" or not self.has_change_permission(request, month):
             raise PermissionDenied
         try:
-            overview.save_month(month, request.POST)
+            changes = overview.save_month(month, request.POST)
         except overview.OverviewError as error:
             for message in error.messages:
                 messages.error(request, f"{month}: {message}")
@@ -422,6 +422,7 @@ class MonthAdmin(ModelAdmin):
             for message in error.messages:
                 messages.error(request, f"{month}: {message}")
         else:
+            self.log_overview_change(request, month, "; ".join(changes))
             month.refresh_from_db()
             messages.success(request, f"{month}: збережено.")
             self.message_month_checks(request, month)
@@ -431,6 +432,12 @@ class MonthAdmin(ModelAdmin):
         if year.isdigit() or year == OVERVIEW_ALL_YEARS:
             url += f"?year={year}"
         return HttpResponseRedirect(f"{url}#month-{month.pk}")
+
+    def log_overview_change(self, request: HttpRequest, month: Month, change: str) -> None:
+        """Запис в історії місяця (/history/) про зміну з огляду, зі старим і новим значенням."""
+        if change:
+            # Префікс ще й не дає Django прочитати повідомлення, що почалось з «[», як JSON.
+            self.log_change(request, month, f"Огляд: {change}")
 
     def overview_entry_view(self, request: HttpRequest, object_id: int, kind: str):
         """
@@ -442,9 +449,10 @@ class MonthAdmin(ModelAdmin):
         if request.method != "POST" or not self.has_change_permission(request, month):
             raise PermissionDenied
         try:
-            overview.change_entry(month, kind, request.POST.get("action", ""), request.POST)
+            change = overview.change_entry(month, kind, request.POST.get("action", ""), request.POST)
         except (overview.OverviewError, ValidationError) as error:
             return JsonResponse({"errors": error.messages}, status=400)
+        self.log_overview_change(request, month, change)
         month = exports.months_queryset(Month.objects.filter(pk=month.pk)).get()
         cell = overview.entries_cell(month, kind)
         html = render_to_string(

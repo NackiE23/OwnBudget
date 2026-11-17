@@ -1,6 +1,7 @@
 import datetime
 from decimal import Decimal
 
+from django.contrib.admin.models import LogEntry
 from django.contrib.auth.models import User
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
@@ -131,6 +132,27 @@ class SaveMonthTests(TestCase):
         # Ліміт перераховано з нового Salary: 20% від 60 000.
         self.assertEqual((food.actual, food.limit_amount, food.mark), (D("9000.00"), D("12000.00"), "gold"))
 
+    def test_returns_old_and_new_values_of_changed_fields(self):
+        taxes = LineType.objects.get(name="Taxes")
+        changes = save_month(
+            self.month,
+            {
+                "salary": "50000",  # без змін
+                "total_expenses": "",
+                line_field(self.rent.line_type_id): "=15000+500",
+                line_field(taxes.pk): "",  # порожньо й було порожньо
+                actual_field(self.food.pk): "9000",
+            },
+        )
+        self.assertEqual(
+            changes,
+            [
+                "Rent: 15 000.00 → 15 500.00 (=15000+500)",
+                "Їжа: Як Є: порожньо → 9 000.00",
+            ],
+        )
+        self.assertEqual(save_month(self.month, {line_field(self.rent.line_type_id): "=15000+500"}), [])
+
     def test_percent_limits_are_not_editable(self):
         save_month(self.month, {limit_field(self.food.pk): "1"})
         self.assertEqual(self.month.allocations.get(category=self.food).limit_amount, D("10000.00"))
@@ -180,6 +202,24 @@ class ChangeEntryTests(TestCase):
 
         cell = next(cell for cell in Overview([self.month]).row(self.month).cells if cell.field == self.kind)
         self.assertEqual((cell.entry_type, [(e.amount, e.text) for e in cell.entries]), ("income", [("4\xa0000.00", "мама папа")]))
+
+    def test_describes_the_change(self):
+        added = change_entry(self.month, self.kind, "add", {"amount": "3500", "note": "мама"})
+        self.assertEqual(added, "Additional incomes: додано «3 500.00 · мама»")
+        line = self.month.lines.get(line_type=self.incomes)
+        edit = {"entry": str(line.pk), "amount": "=3000+1000", "note": "мама"}
+        self.assertEqual(
+            change_entry(self.month, self.kind, "edit", edit),
+            "Additional incomes: «3 500.00 · мама» → «4 000.00 (=3000+1000) · мама»",
+        )
+        self.assertEqual(change_entry(self.month, self.kind, "edit", edit), "")
+        self.assertEqual(
+            change_entry(self.month, self.kind, "delete", {"entry": str(line.pk)}),
+            "Additional incomes: видалено «4 000.00 (=3000+1000) · мама»",
+        )
+        self.assertEqual(
+            change_entry(self.month, "notes", "add", {"text": "-300 кава"}), "Notes: додано «-300 кава»"
+        )
 
     def test_income_requires_amount(self):
         for amount in ["", "abc"]:
@@ -285,6 +325,18 @@ class OverviewViewTests(TestCase):
         )
         self.open.refresh_from_db()
         self.assertEqual(self.open.salary, D("60000.00"))
+
+    def test_changes_are_logged_to_month_history(self):
+        save_url = reverse("admin:budget_month_overview_save", args=[self.open.pk])
+        self.client.post(save_url, {"salary": "60000"})
+        self.client.post(save_url, {"salary": "60000"})  # без змін: запису немає
+        entry_url = reverse("admin:budget_month_overview_entry", args=[self.open.pk, "notes"])
+        self.client.post(entry_url, {"action": "add", "text": "-2000 лампа"})
+
+        response = self.client.get(reverse("admin:budget_month_history", args=[self.open.pk]))
+        self.assertContains(response, "Огляд: Salary: 50 000.00 → 60 000.00")
+        self.assertContains(response, "Огляд: Notes: додано «-2000 лампа»")
+        self.assertEqual(LogEntry.objects.filter(object_id=str(self.open.pk)).count(), 2)
 
     def test_entry_endpoint_returns_cell(self):
         url = reverse("admin:budget_month_overview_entry", args=[self.open.pk, "notes"])
