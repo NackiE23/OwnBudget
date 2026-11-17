@@ -334,7 +334,7 @@ def save_month(month: Month, data: Mapping[str, str]) -> list[str]:
     errors: list[str] = []
     changes: list[str] = []
 
-    def changed(label: str, old: tuple[Decimal | None, str], new: tuple[Decimal | None, str]) -> None:
+    def record_change(label: str, old: tuple[Decimal | None, str], new: tuple[Decimal | None, str]) -> None:
         if old != new:
             changes.append(f"{label}: {shown(*old)} → {shown(*new)}")
 
@@ -349,11 +349,11 @@ def save_month(month: Month, data: Mapping[str, str]) -> list[str]:
     if SALARY in data:
         salary, expression = amount(SALARY, "Salary")
         salary = salary if salary is not None else Decimal("0")
-        changed("Salary", (month.salary, month.salary_expression), (salary, expression))
+        record_change("Salary", (month.salary, month.salary_expression), (salary, expression))
         month.salary, month.salary_expression = salary, expression
     if TOTAL_EXPENSES in data:
         total_expenses, _ = amount(TOTAL_EXPENSES, "Total expenses")
-        changed("Total expenses", (month.total_expenses, ""), (total_expenses, ""))
+        record_change("Total expenses", (month.total_expenses, ""), (total_expenses, ""))
         month.total_expenses = total_expenses
 
     line_values = {}
@@ -390,7 +390,7 @@ def save_month(month: Month, data: Mapping[str, str]) -> list[str]:
         own = lines.get(pk, [])
         old = (own[0].amount, own[0].amount_expression) if own else (None, "")
         new = (value or Decimal("0"), expression) if own or value is not None else (None, "")
-        changed(line_types[pk].name, old, new)
+        record_change(line_types[pk].name, old, new)
         if own:
             own[0].amount = value or Decimal("0")
             own[0].amount_expression = expression
@@ -402,11 +402,11 @@ def save_month(month: Month, data: Mapping[str, str]) -> list[str]:
         allocation = allocations.get(category.pk)
         if "actual" in values:
             old = (allocation.actual, allocation.actual_expression) if allocation else (None, "")
-            changed(f"{category.name}: Як Є", old, (values["actual"], values["actual_expression"]))
+            record_change(f"{category.name}: Як Є", old, (values["actual"], values["actual_expression"]))
         if "limit_amount" in values:
             limit = "Ціль" if category.kind == AllocationCategory.Kind.SAVINGS_POOL else "Межа"
             old = (allocation.limit_amount if allocation else None, "")
-            changed(f"{category.name}: {limit}", old, (values["limit_amount"], ""))
+            record_change(f"{category.name}: {limit}", old, (values["limit_amount"], ""))
         if allocation is None:
             if all(value in (None, "") for value in values.values()):
                 continue

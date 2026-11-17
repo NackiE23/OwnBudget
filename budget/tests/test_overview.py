@@ -153,6 +153,14 @@ class SaveMonthTests(TestCase):
         )
         self.assertEqual(save_month(self.month, {line_field(self.rent.line_type_id): "=15000+500"}), [])
 
+    def test_changes_in_several_categories(self):
+        # Рядок огляду надсилає всі категорії: кожна має потрапити в історію.
+        vacation = by_name("На відпустку")
+        changes = save_month(self.month, {actual_field(self.food.pk): "9000", actual_field(vacation.pk): "=1000+500"})
+        self.assertEqual(
+            changes, ["Їжа: Як Є: порожньо → 9\xa0000.00", "На відпустку: Як Є: порожньо → 1\xa0500.00 (=1000+500)"]
+        )
+
     def test_percent_limits_are_not_editable(self):
         save_month(self.month, {limit_field(self.food.pk): "1"})
         self.assertEqual(self.month.allocations.get(category=self.food).limit_amount, D("10000.00"))
@@ -360,3 +368,7 @@ class OverviewViewTests(TestCase):
         self.assertContains(response, "закритий")
         self.closed.refresh_from_db()
         self.assertEqual(self.closed.salary, D("50000.00"))
+
+    def test_non_numeric_month_id_is_not_a_server_error(self):
+        response = self.client.get(f"/{reverse('admin:budget_month_changelist').strip('/')}/overview/{self.open.pk}/change/")
+        self.assertLess(response.status_code, 500)

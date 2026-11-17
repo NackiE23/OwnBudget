@@ -312,19 +312,21 @@ class MonthAdmin(ModelAdmin):
     def export_all_csv(self, request: HttpRequest):
         return exports.months_csv()
 
-    def has_close_permission(self, request: HttpRequest, object_id=None) -> bool:
+    def _has_status_permission(self, request: HttpRequest, object_id, status: str) -> bool:
         if not self.has_change_permission(request):
             return False
         if object_id is None:
             return True
-        return Month.objects.filter(pk=object_id, status=Month.Status.OPEN).exists()
+        # Нечисловий id (наприклад «overview/39/change/») не місяць, а не помилка сервера.
+        if not str(object_id).isdigit():
+            return False
+        return Month.objects.filter(pk=object_id, status=status).exists()
+
+    def has_close_permission(self, request: HttpRequest, object_id=None) -> bool:
+        return self._has_status_permission(request, object_id, Month.Status.OPEN)
 
     def has_reopen_permission(self, request: HttpRequest, object_id=None) -> bool:
-        if not self.has_change_permission(request):
-            return False
-        if object_id is None:
-            return True
-        return Month.objects.filter(pk=object_id, status=Month.Status.CLOSED).exists()
+        return self._has_status_permission(request, object_id, Month.Status.CLOSED)
 
     @action(description="Закрити місяць", icon="lock", url_path="close", permissions=["close"])
     def close_month(self, request: HttpRequest, object_id):
